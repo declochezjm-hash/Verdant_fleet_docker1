@@ -1,0 +1,136 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useState } from "react";
+import {
+  Outlet,
+  Link,
+  createRootRouteWithContext,
+  useRouter,
+  HeadContent,
+  Scripts,
+} from "@tanstack/react-router";
+import { Sidebar } from "@/components/views/sidebar";
+import { RoleSwitcher } from "@/components/role-switcher";
+import { Toaster } from "@/components/ui/sonner";
+import { AuthProvider } from "@/lib/auth-context";
+import { Menu, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+
+import appCss from "../styles.css?url";
+
+function NotFoundComponent() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+      <div className="max-w-md text-center">
+        <h1 className="text-7xl font-bold text-foreground">404</h1>
+        <p className="mt-2 text-sm text-muted-foreground">Page introuvable.</p>
+        <div className="mt-6">
+          <Link to="/" className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">
+            Retour à l'accueil
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
+  console.error(error);
+  const router = useRouter();
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+      <div className="max-w-md text-center">
+        <h1 className="text-xl font-semibold">Une erreur est survenue</h1>
+        <p className="mt-2 text-sm text-muted-foreground">{error.message}</p>
+        <button
+          onClick={() => { router.invalidate(); reset(); }}
+          className="mt-6 inline-flex rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+        >
+          Réessayer
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
+  head: () => ({
+    meta: [
+      { charSet: "utf-8" },
+      { name: "viewport", content: "width=device-width, initial-scale=1" },
+      { title: "Verdura — Gestion espaces verts" },
+      { name: "description", content: "Application de gestion full-stack pour services d'espaces verts : planning, stocks phytosanitaires, parc matériel, comptabilité analytique." },
+      { property: "og:title", content: "Verdura — Gestion espaces verts" },
+      { name: "twitter:title", content: "Verdura — Gestion espaces verts" },
+      { property: "og:description", content: "Application de gestion full-stack pour services d'espaces verts : planning, stocks phytosanitaires, parc matériel, comptabilité analytique." },
+      { name: "twitter:description", content: "Application de gestion full-stack pour services d'espaces verts : planning, stocks phytosanitaires, parc matériel, comptabilité analytique." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/c857ed4d-0b4b-41e6-80c4-700aa9dc0574/id-preview-427019b6--acc191bd-8586-43d5-9022-4e20cf7eb736.lovable.app-1778152200622.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/c857ed4d-0b4b-41e6-80c4-700aa9dc0574/id-preview-427019b6--acc191bd-8586-43d5-9022-4e20cf7eb736.lovable.app-1778152200622.png" },
+      { name: "twitter:card", content: "summary_large_image" },
+      { property: "og:type", content: "website" },
+    ],
+    links: [{ rel: "stylesheet", href: appCss }],
+  }),
+  shellComponent: RootShell,
+  component: RootComponent,
+  notFoundComponent: NotFoundComponent,
+  errorComponent: ErrorComponent,
+});
+
+function RootShell({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="fr">
+      <head><HeadContent /></head>
+      <body>
+        {children}
+        <Scripts />
+      </body>
+    </html>
+  );
+}
+
+function RootComponent() {
+  const { queryClient } = Route.useRouteContext();
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <div className="flex min-h-screen w-full bg-background">
+          {/* Desktop Sidebar */}
+          <div className="hidden md:flex">
+            <Sidebar />
+          </div>
+
+          {/* Mobile Sidebar Overlay */}
+          {isMobileMenuOpen && (
+            <div className="fixed inset-0 z-50 flex md:hidden">
+              <div className="fixed inset-0 bg-background/80 backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)} />
+              <div className="relative flex w-64 flex-col">
+                <Sidebar />
+                <Button variant="ghost" size="icon" className="absolute right-2 top-2" onClick={() => setIsMobileMenuOpen(false)}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-1 flex-col">
+            <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b bg-card/80 px-4 backdrop-blur sm:px-6">
+              <div className="flex items-center gap-2">
+                <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setIsMobileMenuOpen(true)}>
+                  <Menu className="h-5 w-5" />
+                </Button>
+                <h1 className="text-sm font-semibold sm:text-base text-primary uppercase tracking-wider">Verdura</h1>
+              </div>
+              <RoleSwitcher />
+            </header>
+            <main className="flex-1 overflow-x-hidden">
+              <Outlet />
+            </main>
+          </div>
+        </div>
+        <Toaster />
+      </AuthProvider>
+    </QueryClientProvider>
+  );
+}

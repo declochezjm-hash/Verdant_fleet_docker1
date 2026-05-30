@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useStore, type Task } from "@/lib/mock-data";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +16,11 @@ export function PlanningView() {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
   const [teamFilter, setTeamFilter] = useState<string>("all");
   const [dragId, setDragId] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   const visibleTeams = teamFilter === "all" ? TEAMS : [teamFilter];
@@ -44,7 +49,7 @@ export function PlanningView() {
         <div className="flex items-center gap-2">
           <Button variant="outline" size="icon" onClick={() => setWeekStart(addDays(weekStart, -7))}><ChevronLeft className="h-4 w-4" /></Button>
           <div className="min-w-[180px] text-center text-sm font-medium">
-            Sem. du {format(weekStart, "d MMM", { locale: fr })}
+            {mounted ? `Sem. du ${format(weekStart, "d MMM", { locale: fr })}` : "..."}
           </div>
           <Button variant="outline" size="icon" onClick={() => setWeekStart(addDays(weekStart, 7))}><ChevronRight className="h-4 w-4" /></Button>
           <Select value={teamFilter} onValueChange={setTeamFilter}>

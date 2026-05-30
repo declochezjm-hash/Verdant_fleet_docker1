@@ -89,18 +89,42 @@ export function AgentSupabaseView() {
   });
 
   const myTasks = useMemo(
-    () => (tasksQ.data ?? []).filter((t) => isToday(parseISO(t.scheduled_at))),
-    [tasksQ.data]
+    () => !mounted ? [] : (tasksQ.data ?? []).filter((t) => isToday(parseISO(t.scheduled_at))),
+    [tasksQ.data, mounted]
   );
   const upcoming = useMemo(
-    () => (tasksQ.data ?? []).filter((t) => new Date(t.scheduled_at) > new Date() && !isToday(parseISO(t.scheduled_at))).slice(0, 3),
-    [tasksQ.data]
+    () => !mounted ? [] : (tasksQ.data ?? []).filter((t) => new Date(t.scheduled_at) > new Date() && !isToday(parseISO(t.scheduled_at))).slice(0, 3),
+    [tasksQ.data, mounted]
   );
 
   const [openTask, setOpenTask] = useState<TaskRow | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [rotation, setRotation] = useState(0);
   const handlePreview = (url: string) => { setRotation(0); setPreviewUrl(url); };
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const [anomalyTaskId, setAnomalyTaskId] = useState<string | null>(null);
+
+  const handleQuickAnomaly = async (equipmentId: string, description: string) => {
+    if (!anomalyTaskId || !user) return;
+    try {
+      const { error: e1 } = await supabase.from("anomalies").insert({
+        task_id: anomalyTaskId, 
+        equipment_id: equipmentId, 
+        reported_by: user.id, 
+        description,
+      });
+      if (e1) throw e1;
+      await supabase.from("equipment").update({ status: "Maintenance requise" }).eq("id", equipmentId);
+      toast.warning("Anomalie matériel transmise à la coordination");
+      setAnomalyTaskId(null);
+    } catch (err: any) { toast.error(err.message); }
+  };
+
   const live = openTask ? (tasksQ.data ?? []).find((t) => t.id === openTask.id) ?? null : null;
 
   if (tasksQ.isLoading) return <div className="flex items-center justify-center p-10"><Loader2 className="h-6 w-6 animate-spin" /></div>;
@@ -108,7 +132,9 @@ export function AgentSupabaseView() {
   return (
     <div className="space-y-4 p-4 pb-24">
       <div>
-        <p className="text-sm text-muted-foreground">{format(new Date(), "EEEE d MMMM", { locale: fr })}</p>
+        <p className="text-sm text-muted-foreground">
+          {mounted ? format(new Date(), "EEEE d MMMM", { locale: fr }) : "..."}
+        </p>
         <h1 className="text-2xl font-bold">Bonjour {profile?.name?.split(" ")[0] ?? ""}</h1>
         <p className="text-sm text-muted-foreground">{myTasks.length} chantier{myTasks.length > 1 ? "s" : ""} aujourd'hui</p>
       </div>
@@ -121,6 +147,7 @@ export function AgentSupabaseView() {
           <TaskCard key={task.id} task={task}
             onStart={() => startMut.mutate(task.id)}
             onFinish={() => setOpenTask(task)}
+            onAnomaly={() => setAnomalyTaskId(task.id)}
             onPhoto={() => qc.invalidateQueries({ queryKey: ["my-tasks"] })}
             onPreview={handlePreview}
           />
@@ -152,6 +179,14 @@ export function AgentSupabaseView() {
           taskProducts={(taskProductsQ.data ?? []).filter((tp) => tp.task_id === live.id)}
           onClose={() => setOpenTask(null)}
           onPreview={handlePreview}
+        />
+      )}
+
+      {anomalyTaskId && (
+        <AnomalyDialog
+          equipment={equipmentQ.data ?? []}
+          onClose={() => setAnomalyTaskId(null)}
+          onSubmit={handleQuickAnomaly}
         />
       )}
 
@@ -421,7 +456,7 @@ function AnnotationDialog({ file, onSave, onCancel }: { file: File; onSave: (blo
   );
 }
 
-function TaskCard({ task, onStart, onFinish, onPhoto, onPreview }: { task: TaskRow; onStart: () => void; onFinish: () => void; onPhoto: () => void; onPreview: (url: string) => void }) {
+function TaskCard({ task, onStart, onFinish, onPhoto, onPreview, onAnomaly }: { task: TaskRow; onStart: () => void; onFinish: () => void; onPhoto: () => void; onPreview: (url: string) => void; onAnomaly: () => void }) {
   return (
     <Card className="overflow-hidden">
       <div className={`h-1.5 w-full ${task.status === "termine" ? "bg-success" : task.status === "en_cours" ? "bg-accent" : "bg-primary"}`} />
@@ -453,9 +488,14 @@ function TaskCard({ task, onStart, onFinish, onPhoto, onPreview }: { task: TaskR
           </Button>
         )}
         {task.status === "en_cours" && (
-          <Button size="lg" className="h-14 w-full bg-success text-success-foreground hover:bg-success/90 text-base font-semibold" onClick={onFinish}>
-            <CheckCircle2 className="mr-2 h-5 w-5" /> Terminer le chantier
-          </Button>
+          <div className="flex gap-2">
+            <Button size="lg" className="h-14 flex-1 bg-success text-success-foreground hover:bg-success/90 text-base font-semibold" onClick={onFinish}>
+              <CheckCircle2 className="mr-2 h-5 w-5" /> Terminer
+            </Button>
+            <Button size="lg" variant="outline" className="h-14 w-14 p-0 text-destructive border-destructive/20 hover:bg-destructive/5" onClick={onAnomaly}>
+              <AlertTriangle className="h-6 w-6" />
+            </Button>
+          </div>
         )}
         {task.status === "termine" && (
           <div className="flex items-center gap-2 rounded-md bg-success/10 p-2 text-sm">

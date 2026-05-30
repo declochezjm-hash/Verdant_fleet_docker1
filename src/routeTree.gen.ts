@@ -16,6 +16,7 @@ import { Route as MaterielRouteImport } from './routes/materiel'
 import { Route as CoordinatorRouteImport } from './routes/coordinator'
 import { Route as CarteRouteImport } from './routes/carte'
 import { Route as AuthRouteImport } from './routes/auth'
+import { Route as AnomaliesRouteImport } from './routes/anomalies'
 import { Route as AnalyticsRouteImport } from './routes/analytics'
 import { Route as IndexRouteImport } from './routes/index'
 
@@ -54,6 +55,11 @@ const AuthRoute = AuthRouteImport.update({
   path: '/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AnomaliesRoute = AnomaliesRouteImport.update({
+  id: '/anomalies',
+  path: '/anomalies',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AnalyticsRoute = AnalyticsRouteImport.update({
   id: '/analytics',
   path: '/analytics',
@@ -68,6 +74,7 @@ const IndexRoute = IndexRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/analytics': typeof AnalyticsRoute
+  '/anomalies': typeof AnomaliesRoute
   '/auth': typeof AuthRoute
   '/carte': typeof CarteRoute
   '/coordinator': typeof CoordinatorRoute
@@ -79,6 +86,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/analytics': typeof AnalyticsRoute
+  '/anomalies': typeof AnomaliesRoute
   '/auth': typeof AuthRoute
   '/carte': typeof CarteRoute
   '/coordinator': typeof CoordinatorRoute
@@ -91,6 +99,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/analytics': typeof AnalyticsRoute
+  '/anomalies': typeof AnomaliesRoute
   '/auth': typeof AuthRoute
   '/carte': typeof CarteRoute
   '/coordinator': typeof CoordinatorRoute
@@ -104,6 +113,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/analytics'
+    | '/anomalies'
     | '/auth'
     | '/carte'
     | '/coordinator'
@@ -115,6 +125,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/analytics'
+    | '/anomalies'
     | '/auth'
     | '/carte'
     | '/coordinator'
@@ -126,6 +137,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/analytics'
+    | '/anomalies'
     | '/auth'
     | '/carte'
     | '/coordinator'
@@ -138,6 +150,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AnalyticsRoute: typeof AnalyticsRoute
+  AnomaliesRoute: typeof AnomaliesRoute
   AuthRoute: typeof AuthRoute
   CarteRoute: typeof CarteRoute
   CoordinatorRoute: typeof CoordinatorRoute
@@ -198,6 +211,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/anomalies': {
+      id: '/anomalies'
+      path: '/anomalies'
+      fullPath: '/anomalies'
+      preLoaderRoute: typeof AnomaliesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/analytics': {
       id: '/analytics'
       path: '/analytics'
@@ -218,6 +238,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AnalyticsRoute: AnalyticsRoute,
+  AnomaliesRoute: AnomaliesRoute,
   AuthRoute: AuthRoute,
   CarteRoute: CarteRoute,
   CoordinatorRoute: CoordinatorRoute,

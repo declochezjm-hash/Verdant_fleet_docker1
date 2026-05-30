@@ -1,16 +1,20 @@
-import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress"; // Fixed: ensure it's imported
-import { CalendarDays, Package, Wrench, AlertTriangle, TrendingUp, Users, Download, FileText, Loader2, TrendingDown, Briefcase } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { CalendarDays, Package, Wrench, AlertTriangle, TrendingUp, Users, Download, FileText, Loader2, TrendingDown, Briefcase, Plus, X, Filter, History as HistoryIcon } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { format, isToday, parseISO } from "date-fns";
 import { fr } from "date-fns/locale";
 import { BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell, Legend } from "recharts";
 import { toast } from "sonner";
+import { TaskCreateDialog } from "./task-create-dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 type TaskWithDetails = {
   id: string;
@@ -21,6 +25,7 @@ type TaskWithDetails = {
   duration: number;
   team: string;
   status: "planifie" | "en_cours" | "termine" | "annule";
+  priority: "normale" | "haute" | "urgente";
   budget: number;
   labor_cost: number;
   finished_at: string | null;
@@ -50,7 +55,62 @@ type EquipmentWithDetails = {
   profiles?: { name: string } | null;
 };
 
+/**
+ * Retourne la variante de style Shadcn pour le badge en fonction du statut
+ */
+export const getStatusVariant = (status: string): "default" | "secondary" | "outline" | "destructive" => {
+  switch (status) {
+    case "planifie":
+      return "secondary";
+    case "en_cours":
+      return "default";
+    case "termine":
+      return "outline";
+    case "annule":
+      return "destructive";
+    default:
+      return "secondary";
+  }
+};
+
+/**
+ * Retourne la variante de style pour la priorité
+ */
+export const getPriorityVariant = (priority: string): "secondary" | "default" | "destructive" | "outline" => {
+  switch (priority) {
+    case "haute":
+      return "default"; // Badge coloré (souvent bleu/vert selon le thème)
+    case "urgente":
+      return "destructive"; // Badge rouge
+    case "normale":
+    default:
+      return "secondary"; // Badge gris
+  }
+};
+
 export function CoordinatorDashboard() {
+  const [priorityFilter, setPriorityFilter] = useState<string>("all");
+  const [teamFilter, setTeamFilter] = useState<string>("all");
+  const [mounted, setMounted] = useState(false);
+
+  // Correction de l'hydratation : On ne rend la date que sur le client
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Récupération des équipes uniques définies dans les profils
+  const { data: teams = [] } = useQuery({
+    queryKey: ["company-teams"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("team")
+        .not("team", "is", null);
+      if (error) throw error;
+      return Array.from(new Set(data.map(p => p.team))).filter(Boolean).sort() as string[];
+    }
+  });
+
   const { data: rawTasks, isLoading: isLoadingTasks } = useQuery<TaskWithDetails[]>({
     queryKey: ["dashboard-tasks"],
     staleTime: 1000 * 60 * 2, // 2 minutes de cache
@@ -58,7 +118,7 @@ export function CoordinatorDashboard() {
       const { data, error } = await supabase
         .from("tasks")
         .select(`
-          id,title,client,address,scheduled_at,duration,team,status,budget,labor_cost,finished_at,created_at,
+          id,title,client,address,scheduled_at,duration,team,status,priority,budget,labor_cost,finished_at,created_at,
           task_assignments(profiles(name)),
           task_products(quantity,products(name,amm_number,category,unit,price_per_unit)),
           task_equipment(equipment(name,hourly_cost))
@@ -99,12 +159,20 @@ export function CoordinatorDashboard() {
   const allProducts = products || [];
   const allEquipment = equipment || [];
 
-  const todayTasks = useMemo(() => allTasks.filter((t) => isToday(parseISO(t.scheduled_at))), [allTasks]);
-  const inProgress = useMemo(() => allTasks.filter((t) => t.status === "en_cours"), [allTasks]);
+  const filteredTasks = useMemo(() => {
+    return allTasks.filter(t => {
+      const matchesPriority = priorityFilter === "all" || t.priority === priorityFilter;
+      const matchesTeam = teamFilter === "all" || t.team === teamFilter;
+      return matchesPriority && matchesTeam;
+    });
+  }, [allTasks, priorityFilter, teamFilter]);
+
+  const todayTasks = useMemo(() => filteredTasks.filter((t) => isToday(parseISO(t.scheduled_at))), [filteredTasks]);
+  const inProgress = useMemo(() => filteredTasks.filter((t) => t.status === "en_cours"), [filteredTasks]);
   const lowStock = useMemo(() => allProducts.filter((p) => p.stock <= p.threshold), [allProducts]);
   const maintenanceAlerts = useMemo(() => allEquipment.filter((e) => e.status !== "OK"), [allEquipment]);
 
-  const processedTasks = useMemo(() => allTasks.map(t => {
+  const processedTasks = useMemo(() => filteredTasks.map(t => {
     const supplies = (t.task_products || []).reduce((sum: number, tp: any) =>
       sum + (Number(tp.quantity) * Number(tp.products?.price_per_unit || 0)), 0) || 0;
     const equipCost = (t.task_equipment || []).reduce((sum: number, te: any) =>
@@ -113,7 +181,7 @@ export function CoordinatorDashboard() {
     const total = labor + supplies + equipCost;
     const margin = Number(t.budget || 0) - total;
     return { ...t, supplies, equipCost, labor, total, margin };
-  }), [allTasks]);
+  }), [filteredTasks]);
 
   const completedProcessedTasks = useMemo(() => processedTasks.filter(t => t.status === "termine"), [processedTasks]);
 
@@ -165,10 +233,10 @@ export function CoordinatorDashboard() {
     toast.success("Registre phytosanitaire exporté (CSV)");
   };
 
-  const teamLoad = useMemo(() => ["Équipe Nord", "Équipe Sud"].map((team) => ({
+  const teamLoad = useMemo(() => teams.map((team) => ({
     name: team,
-    Heures: Math.round(allTasks.filter((t) => t.team === team && t.status !== "termine").reduce((s, t) => s + (Number(t.duration) || 0), 0)),
-  })), [allTasks]);
+    Heures: Math.round(filteredTasks.filter((t) => t.team === team && t.status !== "termine").reduce((s, t) => s + (Number(t.duration) || 0), 0)),
+  })), [filteredTasks, teams]);
 
   const stockByCat = useMemo(() => ["Engrais", "Phyto", "Semences"].map((cat) => ({
     name: cat,
@@ -187,14 +255,45 @@ export function CoordinatorDashboard() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Tableau de bord</h1>
           <p className="text-sm text-muted-foreground">
-            {format(new Date(), "EEEE d MMMM yyyy", { locale: fr })}
+            {mounted ? format(new Date(), "EEEE d MMMM yyyy", { locale: fr }) : "..."}
           </p>
         </div>
-        <Button asChild className="gap-2 shadow-sm">
-          <Link to="/coordinator">
-            <Briefcase className="h-4 w-4" /> Accéder à la gestion des chantiers
-          </Link>
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+            <SelectTrigger className="h-9 w-[150px] shadow-sm">
+              <Filter className="mr-2 h-4 w-4 text-muted-foreground" />
+              <SelectValue placeholder="Priorité" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Toutes priorités</SelectItem>
+              <SelectItem value="normale">Normale</SelectItem>
+              <SelectItem value="haute">Haute</SelectItem>
+              <SelectItem value="urgente">Urgente</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={teamFilter} onValueChange={setTeamFilter}>
+            <SelectTrigger className="h-9 w-[150px] shadow-sm">
+              <Users className="mr-2 h-4 w-4 text-muted-foreground" />
+              <SelectValue placeholder="Équipe" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Toutes les équipes</SelectItem>
+              {teams.map(t => (
+                <SelectItem key={t} value={t}>{t}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <TaskCreateDialog 
+            trigger={
+              <Button variant="outline" className="gap-2 shadow-sm"><Plus className="h-4 w-4" /> Nouveau chantier</Button>
+            } 
+          />
+          <Button asChild className="gap-2 shadow-sm">
+            <Link to="/coordinator">
+              <Briefcase className="h-4 w-4" /> Gestion complète
+            </Link>
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -277,10 +376,15 @@ export function CoordinatorDashboard() {
 
       {(lowStock.length > 0 || maintenanceAlerts.length > 0) && (
         <Card className="border-warning/40">
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="flex items-center gap-2 text-base">
-              <AlertTriangle className="h-4 w-4 text-warning" /> Alertes
+              <AlertTriangle className="h-4 w-4 text-warning" /> Alertes critiques
             </CardTitle>
+              <Button asChild size="sm" variant="ghost" className="text-xs gap-1">
+              <Link to="/anomalies">
+                <HistoryIcon className="h-3.5 w-3.5" /> Voir le journal des anomalies
+              </Link>
+            </Button>
           </CardHeader>
           <CardContent className="grid gap-3 md:grid-cols-2">
             <div>
@@ -350,13 +454,17 @@ function StatCard({ icon: Icon, label, value, accent }: { icon: React.ElementTyp
 
 function TaskRow({ task }: { task: TaskWithDetails }) {
   const agentName = task.task_assignments?.[0]?.profiles?.name || "Non assigné";
-  const statusColor = task.status === "termine" ? "bg-success/20 text-success-foreground" : task.status === "en_cours" ? "bg-accent/30 text-accent-foreground" : "bg-secondary text-secondary-foreground";
   return (
     <div className="flex items-center justify-between rounded-md border bg-card p-2.5">
       <div className="min-w-0">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium truncate">{task.title}</span>
-          <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium uppercase ${statusColor}`}>{task.status}</span>
+          <Badge variant={getStatusVariant(task.status)} className="text-[10px] uppercase">
+            {task.status === "planifie" ? "planifié" : task.status === "en_cours" ? "en cours" : task.status}
+          </Badge>
+          {task.priority && task.priority !== "normale" && (
+            <Badge variant={getPriorityVariant(task.priority)} className="text-[10px] uppercase">{task.priority}</Badge>
+          )}
         </div> 
         <div className="mt-0.5 text-xs text-muted-foreground truncate">
           {task.client} · {format(parseISO(task.scheduled_at), "HH'h'mm")} · {agentName}

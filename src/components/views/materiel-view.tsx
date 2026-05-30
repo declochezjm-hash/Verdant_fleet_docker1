@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format, parseISO } from "date-fns";
 import { fr } from "date-fns/locale";
-import { Wrench, AlertTriangle, History, User as UserIcon } from "lucide-react";
+import { Wrench, AlertTriangle, History as HistoryIcon, User as UserIcon } from "lucide-react";
 import { toast } from "sonner";
 
 export function MaterielView() {
@@ -56,7 +56,7 @@ export function MaterielView() {
                 </div>
                 <div className="flex gap-2">
                   <Button variant="outline" size="sm" className="flex-1" onClick={() => setSelected(e)}>
-                    <History className="mr-1 h-3.5 w-3.5" /> Carnet
+                    <HistoryIcon className="mr-1 h-3.5 w-3.5" /> Carnet
                   </Button>
                   <Button size="sm" className="flex-1" onClick={() => { setSelected(e); setLogOpen(true); }}>
                     <Wrench className="mr-1 h-3.5 w-3.5" /> Réviser

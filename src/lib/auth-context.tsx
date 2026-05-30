@@ -29,25 +29,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (s?.user) {
         setTimeout(() => loadProfile(s.user.id), 0);
       } else {
-        setProfile(null); setRoles([]);
+        setProfile(null);
+        setRoles([]);
+        setLoading(false);
       }
     });
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       if (data.session?.user) loadProfile(data.session.user.id);
       else setLoading(false);
+    }).catch((error) => {
+      console.error("Erreur de session Supabase :", error);
+      setLoading(false);
     });
     return () => sub.subscription.unsubscribe();
   }, []);
 
   const loadProfile = async (uid: string) => {
-    const [{ data: p }, { data: r }] = await Promise.all([
-      supabase.from("profiles").select("id,name,team").eq("id", uid).maybeSingle(),
-      supabase.from("user_roles").select("role").eq("user_id", uid),
-    ]);
-    setProfile(p ?? null);
-    setRoles((r ?? []).map((x) => x.role as AppRole));
-    setLoading(false);
+    try {
+      const [{ data: p, error: profileError }, { data: r, error: rolesError }] = await Promise.all([
+        supabase.from("profiles").select("id,name,team").eq("id", uid).maybeSingle(),
+        supabase.from("user_roles").select("role").eq("user_id", uid),
+      ]);
+
+      if (profileError) {
+        console.error("Erreur de chargement du profil :", profileError);
+      }
+      if (rolesError) {
+        console.error("Erreur de chargement des rôles :", rolesError);
+      }
+
+      setProfile(p ?? null);
+      setRoles((r ?? []).map((x) => x.role as AppRole));
+    } catch (error) {
+      console.error("Erreur inattendue lors du chargement du profil :", error);
+      setProfile(null);
+      setRoles([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const primaryRole: AppRole | null = roles.includes("admin") ? "admin"

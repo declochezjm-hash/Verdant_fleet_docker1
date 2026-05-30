@@ -5,8 +5,20 @@ import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Save, UserCog, Euro, Loader2, Database, Rocket } from "lucide-react";
+import { Save, UserCog, Euro, Loader2, Database, Rocket, Users, Plus, Trash2, Palette } from "lucide-react";
 import { toast } from "sonner";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 export function SettingsView() {
   const { user } = useAuth();
@@ -20,6 +32,41 @@ export function SettingsView() {
       if (error) throw error;
       return data;
     }
+  });
+
+  // Récupération de la liste des équipes
+  const { data: teams = [] } = useQuery({
+    queryKey: ["settings-teams"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("teams").select("*").order("name");
+      if (error) throw error;
+      return data;
+    }
+  });
+
+  const createTeamMutation = useMutation({
+    mutationFn: async ({ name, color }: { name: string, color: string }) => {
+      const { error } = await supabase.from("teams").insert([{ name, color }]);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["settings-teams"] });
+      toast.success("Équipe créée !");
+      setNewTeamName("");
+    },
+    onError: (err: Error) => toast.error(err.message)
+  });
+
+  const deleteTeamMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("teams").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["settings-teams"] });
+      toast.success("Équipe supprimée.");
+    },
+    onError: () => toast.error("L'équipe est probablement utilisée.")
   });
 
   const updateRateMutation = useMutation({
@@ -37,6 +84,8 @@ export function SettingsView() {
   });
 
   const [dirtyRates, setDirtyRates] = useState<Record<string, number>>({});
+  const [newTeamName, setNewTeamName] = useState("");
+  const [newTeamColor, setNewTeamColor] = useState("#6366f1");
   const [isSeeding, setIsSeeding] = useState(false);
 
   const handleSeedData = async () => {
@@ -109,6 +158,45 @@ export function SettingsView() {
         </p>
       </div>
 
+      <div className="grid gap-6 lg:grid-cols-2 items-start">
+        <Card className="border-2 shadow-sm">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Users className="h-5 w-5 text-primary" />
+              <CardTitle>Gestion des Équipes</CardTitle>
+            </div>
+            <CardDescription>Configurez les équipes et leurs couleurs d'affichage.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-end gap-2">
+              <div className="flex-1 space-y-1">
+                <label className="text-[10px] uppercase font-bold text-muted-foreground">Nom</label>
+                <Input placeholder="Nom..." value={newTeamName} onChange={e => setNewTeamName(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-muted-foreground">Couleur</label>
+                <Input type="color" className="w-16 p-1 h-10" value={newTeamColor} onChange={e => setNewTeamColor(e.target.value)} />
+              </div>
+              <Button onClick={() => { if(newTeamName) createTeamMutation.mutate({ name: newTeamName, color: newTeamColor }); }}>
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="space-y-2">
+              {teams.map(t => (
+                <div key={t.id} className="flex items-center justify-between p-2 border rounded-md">
+                  <div className="flex items-center gap-2">
+                    <div className="h-4 w-4 rounded-full shadow-sm" style={{ backgroundColor: t.color }} />
+                    <span className="font-medium">{t.name}</span>
+                  </div>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => deleteTeamMutation.mutate(t.id)}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
       <Card className="border-2 shadow-sm">
         <CardHeader>
           <div className="flex items-center gap-2">
@@ -132,15 +220,31 @@ export function SettingsView() {
                   Générez instantanément des produits, du matériel et des chantiers fictifs pour tester les graphiques.
                 </p>
               </div>
-              <Button 
-                variant="outline" 
-                onClick={handleSeedData} 
-                disabled={isSeeding}
-                className="bg-background hover:bg-primary hover:text-primary-foreground transition-all"
-              >
-                {isSeeding ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Rocket className="mr-2 h-4 w-4" />}
-                Générer les données démo
-              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button 
+                    variant="outline" 
+                    disabled={isSeeding}
+                    className="bg-background hover:bg-primary hover:text-primary-foreground transition-all"
+                  >
+                    {isSeeding ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Rocket className="mr-2 h-4 w-4" />}
+                    Générer les données démo
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Générer des données de démonstration ?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Cette action va injecter des chantiers, des produits et du matériel fictifs dans votre base de données. 
+                      Bien que cela n'écrase pas vos données existantes, cela peut encombrer vos listes et vos statistiques analytiques.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Annuler</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleSeedData}>Confirmer la génération</AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
           </div>
 
@@ -195,6 +299,7 @@ export function SettingsView() {
           </div>
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }

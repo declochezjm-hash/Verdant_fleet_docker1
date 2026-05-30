@@ -11,11 +11,30 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { Leaf, Loader2 } from "lucide-react";
 
+async function authWithTimeout<T>(promise: Promise<T>, timeoutMs = 10000): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(
+        () =>
+          reject(
+            new Error(
+              `Aucune réponse de Supabase après ${timeoutMs / 1000}s. Vérifiez votre réseau et la configuration .env.`,
+            ),
+        ),
+        timeoutMs,
+      ),
+    ),
+  ]) as Promise<T>;
+}
+
 export const Route = createFileRoute("/auth")({ component: AuthPage });
 
 function AuthPage() {
   const { session, loading } = useAuth();
   const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState<'signin' | 'signup'>('signin');
+
   useEffect(() => {
     if (!loading && session) navigate({ to: "/" });
   }, [session, loading, navigate]);
@@ -33,7 +52,7 @@ function AuthPage() {
           <CardDescription>Gestion espaces verts</CardDescription>
         </CardHeader>
         <CardContent>
-          <Tabs defaultValue="signin">
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="signin">Connexion</TabsTrigger>
               <TabsTrigger value="signup">Inscription</TabsTrigger>
@@ -60,13 +79,16 @@ function SignInForm() {
         toast.error("Le client Supabase n'est pas initialisé. Vérifiez vos variables d'environnement.");
         return;
       }
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { error } = await authWithTimeout(supabase.auth.signInWithPassword({ email, password }));
       if (error) {
         console.error("Détails erreur connexion:", error);
         toast.error(error.message);
       } else {
         toast.success("Connexion réussie");
       }
+    } catch (err) {
+      console.error("Erreur de connexion inattendue:", err);
+      toast.error(err instanceof Error ? err.message : "Erreur de connexion");
     } finally {
       setBusy(false);
     }
@@ -100,13 +122,15 @@ function SignUpForm() {
         toast.error("Client Supabase introuvable.");
         return;
       }
-      const { error } = await supabase.auth.signUp({
-        email, password,
-        options: {
-          emailRedirectTo: redirectUrl,
-          data: { name, team, role }
-        },
-      });
+      const { error } = await authWithTimeout(
+        supabase.auth.signUp({
+          email, password,
+          options: {
+            emailRedirectTo: redirectUrl,
+            data: { name, team, role }
+          },
+        }),
+      );
       if (error) {
         console.error("Détails erreur inscription:", error);
         toast.error(error.message);

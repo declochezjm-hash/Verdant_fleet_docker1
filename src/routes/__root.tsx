@@ -36,16 +36,30 @@ function NotFoundComponent() {
 function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   console.error(error);
   const router = useRouter();
+
+  // Détecter si c'est une erreur de chargement de module dynamique (Vite/Webpack)
+  const isChunkError = 
+    error.message.includes("fetch") || 
+    error.message.includes("dynamically imported module") ||
+    error.message.includes("Loading chunk") ||
+    error.message.includes("Failed to fetch dynamically imported module");
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
-        <h1 className="text-xl font-semibold">Une erreur est survenue</h1>
-        <p className="mt-2 text-sm text-muted-foreground">{error.message}</p>
+        <h1 className="text-xl font-semibold">
+          {isChunkError ? "Session expirée ou mise à jour" : "Une erreur est survenue"}
+        </h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {isChunkError 
+            ? "Une nouvelle version ou un changement de configuration nécessite un rechargement." 
+            : error.message}
+        </p>
         <button
-          onClick={() => { router.invalidate(); reset(); }}
+          onClick={() => { isChunkError ? window.location.reload() : (router.invalidate(), reset()); }}
           className="mt-6 inline-flex rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
         >
-          Réessayer
+          {isChunkError ? "Recharger la page" : "Réessayer"}
         </button>
       </div>
     </div>
@@ -77,15 +91,27 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 });
 
 function RootShell({ children }: { children: React.ReactNode }) {
-  return (
-    <html lang="fr">
-      <head><HeadContent /></head>
-      <body>
-        {children}
-        <Scripts />
-      </body>
-    </html>
-  );
+  // Render full HTML only on the server. On the client we must only return
+  // the children so React doesn't attempt to render <html> inside the
+  // existing document (which causes hydration errors like "<html> cannot be
+  // a child of <div>").
+  if (typeof window === "undefined") {
+    return (
+      <html lang="fr">
+        <head>
+          <HeadContent />
+        </head>
+        <body>
+          <div id="root">{children}</div>
+          <Scripts />
+        </body>
+      </html>
+    );
+  }
+
+  // Client-side: return only the children (already inside the server's
+  // <div id="root">), avoid rendering document-level tags.
+  return <>{children}</>;
 }
 
 function RootComponent() {

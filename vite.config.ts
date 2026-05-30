@@ -5,6 +5,7 @@
 //     error logger plugins, and sandbox detection (port/host/strictPort).
 // You can pass additional config via defineConfig({ vite: { ... } }) if needed.
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
+import path from "path";
 
 // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
 // @cloudflare/vite-plugin builds from this — wrangler.jsonc main alone is insufficient.
@@ -21,13 +22,28 @@ export default defineConfig({
       watch: {
         usePolling: true,
       },
+      hmr: {
+        clientPort: 3000,
+      },
     },
     optimizeDeps: {
       // On laisse Vite gérer l'optimisation automatiquement pour éviter les erreurs d'exports
+      include: ['recharts', 'lucide-react', 'date-fns'],
       entries: ['./src/entry-client.tsx', './src/routeTree.gen.ts'],
     },
+    resolve: {
+      alias: {
+        'node:async_hooks': path.resolve(process.cwd(), 'node_modules', 'unenv', 'dist', 'runtime', 'node', 'async_hooks.mjs'),
+      },
+    },
     ssr: {
-      noExternal: ['@tanstack/react-start', '@tanstack/react-router', 'ts-invariant', 'lucide-react'],
+      noExternal: [
+        '@tanstack/react-start', 
+        '@tanstack/react-router', 
+        'ts-invariant', 
+        'lucide-react',
+        'recharts'
+      ],
     },
   },
 });

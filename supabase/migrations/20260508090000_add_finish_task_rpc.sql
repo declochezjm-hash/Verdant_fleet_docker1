@@ -11,7 +11,11 @@ SECURITY DEFINER
 AS $$
 DECLARE
   prod_record jsonb;
+  v_duration float;
 BEGIN
+  -- Récupération de la durée de la tâche pour incrémenter les compteurs matériel
+  SELECT duration INTO v_duration FROM public.tasks WHERE id = p_task_id;
+
   -- 1. Mise à jour de la tâche (Statut et métadonnées)
   UPDATE public.tasks
   SET 
@@ -44,5 +48,16 @@ BEGIN
     SET stock = stock - (prod_record->>'quantity')::numeric
     WHERE id = (prod_record->>'productId')::uuid;
   END LOOP;
+
+  -- 3. Mise à jour des heures d'utilisation du matériel et bascule automatique en maintenance
+  UPDATE public.equipment
+  SET 
+    hours_used = hours_used + v_duration,
+    status = CASE 
+      WHEN (hours_used + v_duration) >= hours_for_maintenance AND status = 'OK' 
+      THEN 'Maintenance requise'::public.equipment_status 
+      ELSE status 
+    END
+  WHERE id IN (SELECT equipment_id FROM public.task_equipment WHERE task_id = p_task_id);
 END;
 $$;

@@ -1,8 +1,8 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
-import { type Task, type ProductUsage } from "@/lib/mock-data";
+import { type Task, type ProductUsage, useStore } from "@/lib/mock-data";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -60,6 +60,14 @@ export function AgentView() {
     }
   });
 
+  // Calcul des chantiers à venir (pour éviter l'erreur ReferenceError)
+  const upcoming = useMemo(() => {
+    if (!mounted) return [];
+    return myTasks
+      .filter(t => t.status === "planifié" && !isToday(parseISO(t.date)))
+      .slice(0, 3);
+  }, [myTasks, mounted]);
+
   const startTaskMutation = useMutation({
     mutationFn: async (taskId: string) => {
       const { error } = await supabase
@@ -76,20 +84,25 @@ export function AgentView() {
 
   const [openTask, setOpenTask] = useState<Task | null>(null);
   const liveTask = openTask; 
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   return (
     <div className="space-y-4 p-4 pb-24">
       <div>
-        <p className="text-sm text-muted-foreground">{format(new Date(), "EEEE d MMMM", { locale: fr })}</p>
+        <p className="text-sm text-muted-foreground">{mounted ? format(new Date(), "EEEE d MMMM", { locale: fr }) : "..."}</p>
         <h1 className="text-2xl font-bold">Bonjour {profile?.name?.split(" ")[0] || "Agent"}</h1>
         <p className="text-sm text-muted-foreground">{myTasks.length} chantier{myTasks.length > 1 ? "s" : ""} aujourd'hui</p>
       </div>
 
       <div className="space-y-3">
-        {myTasks.length === 0 && (
+        {mounted && myTasks.length === 0 && (
           <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">Aucun chantier prévu aujourd'hui 🌿</CardContent></Card>
         )}
-        {myTasks.map((task) => (
+        {mounted && myTasks.map((task) => (
           <TaskCard 
             key={task.id} 
             task={task} 

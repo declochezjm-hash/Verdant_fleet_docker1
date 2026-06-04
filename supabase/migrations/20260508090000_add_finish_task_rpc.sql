@@ -3,7 +3,8 @@ CREATE OR REPLACE FUNCTION public.finish_task(
   p_task_id uuid,
   p_notes text,
   p_signature_url text,
-  p_products jsonb -- Format: [{"productId": "...", "quantity": 10, "lot": "...", "dose": 0.5}, ...]
+  p_products jsonb, -- Format: [{"productId": "...", "quantity": 10, "lot": "...", "dose": 0.5}, ...]
+  p_actual_weather text
 )
 RETURNS void
 LANGUAGE plpgsql
@@ -22,6 +23,11 @@ BEGIN
     status = 'termine',
     notes = p_notes,
     signature_url = p_signature_url,
+    actual_weather = p_actual_weather,
+    weather_alert_status = CASE 
+      WHEN requires_dry_weather = true AND p_actual_weather = 'Pluie' THEN 'mismatch'
+      ELSE 'ok'
+    END,
     finished_at = now(),
     -- Calcul automatique du coût de main d'oeuvre basé sur les taux actuels des profils assignés
     labor_cost = (

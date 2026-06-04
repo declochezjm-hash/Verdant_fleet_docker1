@@ -1,5 +1,7 @@
 -- Schéma pour le Système de Gestion des Espaces Verts
 
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
 -- 1. Types Enumérés
 DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'app_role') THEN
@@ -17,6 +19,9 @@ DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'task_status') THEN
         CREATE TYPE task_status AS ENUM ('planifie', 'en_cours', 'termine', 'annule');
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'task_priority') THEN
+        CREATE TYPE task_priority AS ENUM ('normale', 'haute', 'urgente');
+    END IF;
 END $$;
 
 -- 2. Profils (Agents)
@@ -25,6 +30,14 @@ CREATE TABLE IF NOT EXISTS profiles (
   name TEXT NOT NULL,
   team TEXT,
   hourly_rate NUMERIC DEFAULT 35,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 2c. Équipes (Centralisation des couleurs et noms)
+CREATE TABLE IF NOT EXISTS teams (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  name TEXT UNIQUE NOT NULL,
+  color TEXT DEFAULT '#94a3b8',
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -102,9 +115,66 @@ CREATE TABLE IF NOT EXISTS products (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 4b. Gestion des Achats (Fournisseurs, Commandes, Factures)
+CREATE TABLE IF NOT EXISTS suppliers (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  name TEXT NOT NULL,
+  contact_info TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS purchase_orders (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  supplier_id UUID REFERENCES suppliers(id),
+  status TEXT DEFAULT 'brouillon', -- 'brouillon', 'envoye', 'recu'
+  total_amount NUMERIC DEFAULT 0,
+  expected_delivery DATE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS purchase_order_items (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  order_id UUID REFERENCES purchase_orders(id) ON DELETE CASCADE,
+  product_id UUID REFERENCES products(id),
+  quantity FLOAT NOT NULL,
+  unit_price NUMERIC NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS invoices (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  order_id UUID REFERENCES purchase_orders(id),
+  invoice_number TEXT NOT NULL,
+  amount NUMERIC NOT NULL,
+  status TEXT DEFAULT 'en_attente', -- 'en_attente', 'paye'
+  due_date DATE,
+  file_url TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Trigger pour mettre à jour le stock à la réception d'une commande
+CREATE OR REPLACE FUNCTION public.handle_purchase_order_reception()
+RETURNS trigger AS $$
+BEGIN
+  IF (NEW.status = 'recu' AND (OLD.status IS DISTINCT FROM 'recu')) THEN
+    UPDATE public.products p
+    SET stock = p.stock + poi.quantity
+    FROM public.purchase_order_items poi
+    WHERE poi.order_id = NEW.id AND poi.product_id = p.id;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS tr_on_purchase_order_received ON public.purchase_orders;
+CREATE TRIGGER tr_on_purchase_order_received
+  AFTER UPDATE ON public.purchase_orders
+  FOR EACH ROW
+  EXECUTE FUNCTION public.handle_purchase_order_reception();
+
 -- 5. Chantiers (Tasks)
 CREATE TABLE IF NOT EXISTS tasks (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  project_number TEXT,
   title TEXT NOT NULL,
   client TEXT NOT NULL,
   address TEXT NOT NULL,
@@ -114,6 +184,10 @@ CREATE TABLE IF NOT EXISTS tasks (
   duration FLOAT NOT NULL, -- Heures prévues
   team TEXT NOT NULL,
   status task_status DEFAULT 'planifie',
+  priority task_priority DEFAULT 'normale',
+  requires_dry_weather BOOLEAN DEFAULT false,
+  actual_weather TEXT,
+  weather_alert_status TEXT DEFAULT 'ok',
   started_at TIMESTAMPTZ,
   finished_at TIMESTAMPTZ,
   budget NUMERIC DEFAULT 0,
@@ -178,11 +252,16 @@ ALTER TABLE user_roles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE equipment ENABLE ROW LEVEL SECURITY;
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE teams ENABLE ROW LEVEL SECURITY;
 ALTER TABLE task_assignments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE task_equipment ENABLE ROW LEVEL SECURITY;
 ALTER TABLE task_products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE maintenance_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE anomalies ENABLE ROW LEVEL SECURITY;
+ALTER TABLE suppliers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE purchase_orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE purchase_order_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE invoices ENABLE ROW LEVEL SECURITY;
 
 -- Politiques pour les Profils et Rôles
 CREATE POLICY "Les profils sont visibles par tous les utilisateurs connectés" 
@@ -194,6 +273,11 @@ CREATE POLICY "Les rôles sont visibles par tous les utilisateurs connectés"
 -- Politiques pour le Matériel et les Produits (Lecture globale pour inventaire)
 CREATE POLICY "Le matériel est visible par tous" ON equipment FOR SELECT TO authenticated USING (true);
 CREATE POLICY "Les produits sont visibles par tous" ON products FOR SELECT TO authenticated USING (true);
+
+-- Politiques pour les Équipes (Nettoyage préalable pour éviter les erreurs)
+DROP POLICY IF EXISTS "Les équipes sont visibles par tous les utilisateurs connectés" ON teams;
+CREATE POLICY "Les équipes sont visibles par tous les utilisateurs connectés" 
+  ON teams FOR SELECT TO authenticated USING (true);
 
 -- Politiques pour les Tâches (Le cœur du filtrage)
 
@@ -219,6 +303,11 @@ CREATE POLICY "Lecture globale de l'équipement des tâches" ON task_equipment F
 CREATE POLICY "Lecture globale des anomalies" ON anomalies FOR SELECT TO authenticated USING (true);
 CREATE POLICY "Lecture globale des maintenances" ON maintenance_logs FOR SELECT TO authenticated USING (true);
 
+-- Politiques pour les Achats (Visibles par tous, modifiables par admin/coordinateur)
+CREATE POLICY "Lecture globale des achats" ON suppliers FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Lecture globale des commandes" ON purchase_orders FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Lecture globale des factures" ON invoices FOR SELECT TO authenticated USING (true);
+
 -- Politiques d'écriture pour les Coordinateurs/Admins
 CREATE POLICY "Seuls les coordinateurs peuvent modifier les tâches"
   ON tasks FOR ALL TO authenticated
@@ -230,6 +319,9 @@ CREATE POLICY "Seuls les coordinateurs peuvent gérer l'inventaire et le matéri
 
 CREATE POLICY "Seuls les coordinateurs peuvent gérer la flotte"
   ON equipment FOR ALL TO authenticated USING (has_role(auth.uid(), 'coordinator') OR has_role(auth.uid(), 'admin'));
+
+CREATE POLICY "Seuls les coordinateurs peuvent gérer les équipes"
+  ON teams FOR ALL TO authenticated USING (has_role(auth.uid(), 'coordinator') OR has_role(auth.uid(), 'admin'));
 
 -- 10. Configuration du Stockage (Supabase Storage)
 

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,6 +40,7 @@ import {
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { TaskDetailsSheet } from "./task-details-sheet";
 import { TaskCreateDialog } from "./task-create-dialog";
+import { getTeamColor } from "@/lib/team-utils";
 
 /**
  * Labels pour les statuts
@@ -82,6 +83,27 @@ export function CoordinatorView() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [filterTeam, setFilterTeam] = useState("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+
+  // Écoute en temps réel des nouvelles anomalies
+  useEffect(() => {
+    const channel = supabase
+      .channel('realtime-anomalies')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'anomalies' },
+        (payload) => {
+          toast.error("Nouvelle anomalie signalée !", {
+            description: payload.new.description,
+            duration: 8000,
+          });
+          queryClient.invalidateQueries({ queryKey: ["unresolved-anomalies-count"] });
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [queryClient]);
 
   console.log("CoordinatorView rendered. Checking for buttons...");
 
@@ -124,11 +146,14 @@ export function CoordinatorView() {
     }
   });
 
-  // Dérivation dynamique des équipes existantes
+  // Consolidation des équipes pour le filtre (Config + Agents + Valeurs par défaut)
   const teams = useMemo(() => {
-    const uniqueTeams = Array.from(new Set(agents.map(a => a.team))).filter(Boolean) as string[];
-    return uniqueTeams.sort();
-  }, [agents]);
+    const fromProfiles = agents.map(a => a.team).filter(Boolean) as string[];
+    const fromConfig = teamsData.map(t => t.name);
+    // On force l'ajout des équipes Nord et Sud pour le filtrage
+    const set = new Set([...fromProfiles, ...fromConfig, "Équipe Nord", "Équipe Sud"]);
+    return Array.from(set).filter(Boolean).sort();
+  }, [agents, teamsData]);
 
   // Récupération du matériel disponible
   const { data: equipmentList = [], isLoading: loadingEquipment } = useQuery({
@@ -151,19 +176,33 @@ export function CoordinatorView() {
       if (!searchLower) return matchesTeam;
 
       const matchesSearch = 
-        [t.client, t.title, t.address].some(field => 
-          field?.toLowerCase().includes(searchLower)
+        [t.client, t.title, t.address, t.project_number].some(field => 
+          field && String(field).toLowerCase().includes(searchLower)
         );
       
       return matchesTeam && matchesSearch;
     });
   }, [allTasks, filterTeam, searchQuery]);
 
+  // Calcul final des tâches affichées dans le tableau (avec le filtre de statut des cartes)
+  const displayTasks = useMemo(() => {
+    if (statusFilter === "all") return filteredTasks;
+    
+    // Si on clique sur "Total Missions", on montre tout ce qui est actif (planifié + en cours)
+    if (statusFilter === "active_total") {
+      return filteredTasks.filter(t => t.status === "planifie" || t.status === "en_cours");
+    }
+    
+    return filteredTasks.filter(t => t.status === statusFilter);
+  }, [filteredTasks, statusFilter]);
+
   const activeTasks = useMemo(() => 
     filteredTasks.filter(t => t.status === "planifie" || t.status === "en_cours"),
     [filteredTasks]
   );
 
+  // Les compteurs des cartes restent basés sur filteredTasks (recherche + équipe) 
+  // pour que les chiffres ne disparaissent pas quand on filtre.
   const historyTasks = useMemo(() => 
     filteredTasks.filter(t => t.status === "termine" || t.status === "annule"),
     [filteredTasks]
@@ -250,30 +289,41 @@ export function CoordinatorView() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
-        <Card className="bg-primary/5 border-primary/10">
+        <Card 
+          className={`cursor-pointer transition-all hover:scale-[1.02] active:scale-95 ${statusFilter === 'active_total' ? 'ring-2 ring-primary bg-primary/10 border-primary/20' : 'bg-primary/5 border-primary/10'}`}
+          onClick={() => setStatusFilter(statusFilter === 'active_total' ? 'all' : 'active_total')}
+        >
           <CardContent className="p-4 flex items-center gap-4">
             <div className="bg-primary/20 p-2 rounded-lg"><Briefcase className="h-5 w-5 text-primary" /></div>
             <div>
               <div className="text-2xl font-bold">{activeTasks.length}</div>
-              <div className="text-xs text-muted-foreground uppercase font-semibold">Total Missions</div>
+              <div className="text-[10px] text-muted-foreground uppercase font-bold">Total Missions</div>
             </div>
           </CardContent>
         </Card>
-        <Card className="bg-accent/5 border-accent/10">
+        
+        <Card 
+          className={`cursor-pointer transition-all hover:scale-[1.02] active:scale-95 ${statusFilter === 'en_cours' ? 'ring-2 ring-accent bg-accent/10 border-accent/20' : 'bg-accent/5 border-accent/10'}`}
+          onClick={() => setStatusFilter(statusFilter === 'en_cours' ? 'all' : 'en_cours')}
+        >
           <CardContent className="p-4 flex items-center gap-4">
             <div className="bg-accent/20 p-2 rounded-lg"><Clock className="h-5 w-5 text-accent-foreground" /></div>
             <div>
               <div className="text-2xl font-bold">{activeTasks.filter(t => t.status === 'en_cours').length}</div>
-              <div className="text-xs text-muted-foreground uppercase font-semibold">En cours</div>
+              <div className="text-[10px] text-muted-foreground uppercase font-bold">En cours</div>
             </div>
           </CardContent>
         </Card>
-        <Card>
+
+        <Card 
+          className={`cursor-pointer transition-all hover:scale-[1.02] active:scale-95 ${statusFilter === 'planifie' ? 'ring-2 ring-ring bg-muted/50' : ''}`}
+          onClick={() => setStatusFilter(statusFilter === 'planifie' ? 'all' : 'planifie')}
+        >
           <CardContent className="p-4 flex items-center gap-4">
             <div className="bg-muted p-2 rounded-lg"><Calendar className="h-5 w-5 text-muted-foreground" /></div>
             <div>
               <div className="text-2xl font-bold">{activeTasks.filter(t => t.status === 'planifie').length}</div>
-              <div className="text-xs text-muted-foreground uppercase font-semibold">À venir</div>
+              <div className="text-[10px] text-muted-foreground uppercase font-bold">À venir</div>
             </div>
           </CardContent>
         </Card>
@@ -318,16 +368,26 @@ export function CoordinatorView() {
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y">
+          <tbody className="divide-y" key={`${filterTeam}-${statusFilter}-${searchQuery}`}>
                 {loadingTasks ? (
-                  <tr><td colSpan={4} className="py-8 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin" /></td></tr>
-                ) : filteredTasks.length === 0 ? (
-                  <tr><td colSpan={4} className="py-8 text-center text-muted-foreground">Aucune intervention enregistrée.</td></tr>
+                  <tr><td colSpan={5} className="py-8 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin" /></td></tr>
+                ) : displayTasks.length === 0 ? (
+                  <tr><td colSpan={5} className="py-8 text-center text-muted-foreground italic">Aucune intervention ne correspond à ces critères.</td></tr>
                 ) : (
-                  filteredTasks.map((t) => (
-                    <tr key={t.id} className="hover:bg-muted/30 transition-colors">
+                  displayTasks.map((t, index) => (
+                    <tr 
+                      key={t.id} 
+                      className="hover:bg-muted/30 transition-colors animate-in fade-in duration-500"
+                      style={{ 
+                        animationDelay: `${index * 50}ms`,
+                        animationFillMode: 'both' 
+                      }}
+                    >
                       <td className="px-4 py-3">
-                        <div className="font-medium text-slate-900">{t.client}</div>
+                        <div className="flex items-center gap-2">
+                          {t.project_number && <Badge variant="outline" className="h-5 px-1.5 text-[10px] font-bold bg-muted/50">{t.project_number}</Badge>}
+                          <div className="font-medium text-slate-900">{t.client}</div>
+                        </div>
                         <div className="text-xs text-muted-foreground">{t.title}</div>
                       </td>
                       <td className="px-4 py-3">
@@ -336,7 +396,7 @@ export function CoordinatorView() {
                             variant="outline" 
                             className="w-fit text-[10px] mb-1 border-none text-white shadow-sm"
                             style={{ 
-                              backgroundColor: teamsData.find(tm => tm.name === t.team)?.color || '#94a3b8' 
+                              backgroundColor: getTeamColor(t.team, teamsData)
                             }}
                           >
                             {t.team}

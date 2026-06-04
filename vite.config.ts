@@ -18,18 +18,23 @@ export default defineConfig({
       host: '0.0.0.0',
       port: 3000,
       strictPort: true,
-      allowedHosts: true, // Nécessaire pour certains environnements Docker/WSL2
       watch: {
         usePolling: true,
+        interval: 1000,
+        ignored: [
+          "**/.git/**",
+          "**/src/routeTree.gen.ts",
+        ],
       },
       hmr: {
-        clientPort: 3000,
+        protocol: 'ws',
+        port: 3000,
       },
     },
     optimizeDeps: {
-      // On laisse Vite gérer l'optimisation automatiquement pour éviter les erreurs d'exports
-      include: ['recharts', 'lucide-react', 'date-fns'],
-      entries: ['./src/entry-client.tsx', './src/routeTree.gen.ts'],
+      // Force l'inclusion de mapbox-gl pour éviter les erreurs de type MIME dans Docker
+      include: ['recharts', 'lucide-react', 'date-fns', 'mapbox-gl'],
+      entries: ['./src/entry-client.tsx'],
     },
     resolve: {
       alias: {
@@ -42,7 +47,8 @@ export default defineConfig({
         '@tanstack/react-router', 
         'ts-invariant', 
         'lucide-react',
-        'recharts'
+        'recharts',
+        'mapbox-gl'
       ],
     },
   },

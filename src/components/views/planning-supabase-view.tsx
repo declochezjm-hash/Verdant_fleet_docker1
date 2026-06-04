@@ -11,11 +11,14 @@ import { ChevronLeft, ChevronRight, Clock, Wrench, Users, Loader2, Flame, AlertT
 import { toast } from "sonner";
 import { TaskDetailsSheet } from "./task-details-sheet";
 import { TaskCreateDialog } from "./task-create-dialog";
+import { WeatherBadge } from "../../../weather-badge"; // Assurez-vous que le chemin est correct
+import { getTeamColor } from "@/lib/team-utils";
 
 interface Task {
   id: string; title: string; client: string; team: string;
   scheduled_at: string; duration: number; status: "planifie" | "en_cours" | "termine";
   priority?: "normale" | "haute" | "urgente";
+  lat: number | null; lng: number | null; requires_dry_weather: boolean;
 }
 interface Assign { task_id: string; user_id: string }
 interface TaskEquip { task_id: string; equipment_id: string }
@@ -37,7 +40,7 @@ export function PlanningSupabaseView() {
     queryKey: ["planning-tasks"],
     queryFn: async () => {
       const { data, error } = await supabase.from("tasks")
-        .select("id,title,client,team,scheduled_at,duration,status,priority")
+        .select("id,title,client,team,scheduled_at,duration,status,priority,lat,lng,requires_dry_weather")
         .order("scheduled_at");
       if (error) throw error;
       return (data ?? []) as Task[];
@@ -47,7 +50,7 @@ export function PlanningSupabaseView() {
   const profilesQ = useQuery({
     queryKey: ["profiles-min"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("profiles").select("id,name,team");
+      const { data, error } = await supabase.from("profiles").select("id,name,team,hourly_rate");
       if (error) throw error;
       return data ?? [];
     },
@@ -65,7 +68,7 @@ export function PlanningSupabaseView() {
   const equipQ = useQuery({
     queryKey: ["equip-min"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("equipment").select("id,name");
+      const { data, error } = await supabase.from("equipment").select("id,name,hourly_cost,team,assigned_to");
       if (error) throw error;
       return data ?? [];
     },
@@ -107,6 +110,20 @@ export function PlanningSupabaseView() {
     return Array.from(new Set([...fromProfiles, ...fromSettings])).sort();
   }, [profilesQ.data, teamsFull]);
 
+  // Calcul du coût horaire par équipe (Déboursé Sec)
+  const teamCosts = useMemo(() => {
+    const map: Record<string, number> = {};
+    teams.forEach(teamName => {
+      const teamAgents = (profilesQ.data ?? []).filter(p => p.team === teamName);
+      const labor = teamAgents.reduce((s, a) => s + (Number(a.hourly_rate) || 0), 0);
+      const equip = (equipQ.data ?? [])
+        .filter(e => e.team === teamName || teamAgents.some(a => a.id === e.assigned_to))
+        .reduce((s, e) => s + (Number(e.hourly_cost) || 0), 0);
+      map[teamName] = labor + equip;
+    });
+    return map;
+  }, [teams, profilesQ.data, equipQ.data]);
+
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
   const visibleTeams = teamFilter === "all" ? teams : [teamFilter];
   const tasks = tasksQ.data ?? [];
@@ -125,7 +142,10 @@ export function PlanningSupabaseView() {
     setDragId(null);
   };
 
-  if (tasksQ.isLoading) return <div className="flex h-[60vh] items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>;
+  // On attend que le composant soit monté pour afficher les données issues de useQuery
+  // Cela évite que le serveur rende un loader et le client le contenu final trop vite.
+  if (!mounted || tasksQ.isLoading) 
+    return <div className="flex h-[60vh] items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
 
   return (
     <div className="space-y-4 p-4 sm:p-6">
@@ -145,7 +165,11 @@ export function PlanningSupabaseView() {
             <SelectTrigger className="w-[170px]"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Toutes équipes</SelectItem>
-              {teams.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+              {teams.map((t) => (
+                <SelectItem key={t} value={t}>
+                  {t} <span className="ml-1 text-[10px] text-muted-foreground">({teamCosts[t]?.toFixed(0)}€/h)</span>
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -175,7 +199,7 @@ export function PlanningSupabaseView() {
           <Card key={team}>
             <CardHeader className="pb-3">
               <div className="flex items-center gap-2">
-                <div className="h-3 w-3 rounded-full shadow-sm" style={{ backgroundColor: teamsFull.find(tf => tf.name === team)?.color || "#94a3b8" }} />
+                <div className="h-3 w-3 rounded-full shadow-sm" style={{ backgroundColor: getTeamColor(team, teamsFull) }} />
                 <CardTitle className="text-base">{team}</CardTitle>
               </div>
             </CardHeader>
@@ -223,7 +247,7 @@ export function PlanningSupabaseView() {
         <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 rounded-lg border border-dashed bg-muted/5 p-4 mt-6">
           <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground w-full text-center mb-1 lg:w-auto lg:mb-0 lg:mr-2">Identification Équipes :</div>
           {teams.map((teamName) => {
-            const teamColor = teamsFull.find(tf => tf.name === teamName)?.color || "#94a3b8";
+            const teamColor = getTeamColor(teamName, teamsFull);
             return (
               <div key={teamName} className="flex items-center gap-2">
                 <div className="h-3 w-3 rounded-full shadow-sm" style={{ backgroundColor: teamColor }} />
@@ -244,7 +268,12 @@ function PlanningCard({ task, agentsCount, kits, onDragStart, onDragEnd, onClick
   // On peut injecter la couleur ici si on souhaite que la bordure soit celle de l'équipe
   // Ou garder la bordure pour le statut et utiliser la couleur pour d'autres indicateurs.
   const isUrgent = task.priority === "urgente";
-  const statusColor = task.status === "termine" ? "border-l-success" : task.status === "en_cours" ? "border-l-accent" : "border-l-primary";
+  
+  const statusColor = 
+    task.status === "termine" ? "border-l-success" : 
+    task.status === "en_cours" ? "border-l-accent" : 
+    task.status === "annule" ? "border-l-destructive opacity-50" : 
+    "border-l-primary";
 
   return (
     <div
@@ -258,7 +287,15 @@ function PlanningCard({ task, agentsCount, kits, onDragStart, onDragEnd, onClick
         {isUrgent && <Flame className="h-3 w-3 text-destructive fill-destructive" />}
         <span>{task.title}</span>
       </div>
-      <div className="mt-0.5 truncate text-[10px] text-muted-foreground">{task.client}</div>
+      <div className="mt-0.5 flex items-center justify-between gap-1">
+        <div className="truncate text-[10px] text-muted-foreground">{task.client}</div>
+        <WeatherBadge 
+          lat={task.lat} 
+          lng={task.lng} 
+          date={parseISO(task.scheduled_at)}
+          requiresDryWeather={task.requires_dry_weather}
+        />
+      </div>
       <div className="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground">
         <span className="flex items-center gap-0.5"><Clock className="h-3 w-3" />{format(parseISO(task.scheduled_at), "HH'h'")}</span>
         <span className="flex items-center gap-0.5"><Users className="h-3 w-3" />{agentsCount}</span>

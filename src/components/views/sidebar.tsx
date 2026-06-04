@@ -10,6 +10,7 @@ import {
   Package, 
   TrendingUp, 
   Settings,
+  AlertTriangle,
   Leaf
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -28,6 +29,19 @@ export function Sidebar() {
     },
   });
 
+  // Récupération du nombre d'anomalies non résolues (resolved = false)
+  const { data: unresolvedAnomaliesCount = 0 } = useQuery({
+    queryKey: ["unresolved-anomalies-count"],
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from("anomalies")
+        .select("*", { count: "exact", head: true })
+        .eq("resolved", false);
+      if (error) throw error;
+      return count || 0;
+    },
+  });
+
   const navItems = [
     { label: "Tableau de bord", icon: LayoutDashboard, to: "/" },
     { label: "Gestion chantiers", icon: Briefcase, to: "/coordinator" },
@@ -38,6 +52,12 @@ export function Sidebar() {
       icon: Wrench, 
       to: "/materiel",
       badge: alertsCount > 0 ? alertsCount : null 
+    },
+    { 
+      label: "Anomalies", 
+      icon: AlertTriangle, 
+      to: "/anomalies",
+      badge: unresolvedAnomaliesCount > 0 ? unresolvedAnomaliesCount : null 
     },
     { label: "Stocks", icon: Package, to: "/stocks" },
     { label: "Analytique", icon: TrendingUp, to: "/analytics" },
@@ -50,7 +70,7 @@ export function Sidebar() {
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
           <Leaf className="h-5 w-5" />
         </div>
-        <span className="text-lg font-bold tracking-tight text-primary">Verdant Fleet</span>
+        <span className="text-lg font-bold tracking-tight text-primary">VERDURA</span>
       </div>
 
       <nav className="flex-1 space-y-1 overflow-y-auto p-4">
@@ -73,8 +93,13 @@ export function Sidebar() {
               {item.label}
             </div>
             {item.badge && (
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground shadow-sm">
-                {item.badge}
+              <span className="relative flex h-5 w-5 items-center justify-center">
+                {item.label === "Anomalies" && unresolvedAnomaliesCount > 5 && (
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-destructive opacity-75"></span>
+                )}
+                <span className="relative flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground shadow-sm">
+                  {item.badge}
+                </span>
               </span>
             )}
           </Link>

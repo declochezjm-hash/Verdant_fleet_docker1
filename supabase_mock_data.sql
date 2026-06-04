@@ -20,16 +20,16 @@ VALUES
 
 -- 3. Insertion de Chantiers (Tasks)
 -- Note: gen_random_uuid() est utilisé pour les IDs
-INSERT INTO public.tasks (id, title, client, address, scheduled_at, duration, team, status, budget)
+INSERT INTO public.tasks (id, title, client, address, lat, lng, scheduled_at, duration, team, status, budget, requires_dry_weather)
 VALUES 
 -- Chantier terminé (pour tester Admin Analytics)
-(gen_random_uuid(), 'Tonte et Finition Parc Central', 'Mairie de Lyon', 'Place Bellecour, 69002 Lyon', NOW() - INTERVAL '2 days', 4, 'Équipe Nord', 'termine', 450.00),
+(gen_random_uuid(), 'Tonte et Finition Parc Central', 'Mairie de Lyon', 'Place Bellecour, 69002 Lyon', 45.757, 4.832, NOW() - INTERVAL '2 days', 4, 'Équipe Nord', 'termine', 450.00, true),
 
 -- Chantier en cours (pour tester Agent View)
-(gen_random_uuid(), 'Plantation de massifs', 'Résidence les Glycines', '12 Rue des Fleurs, 69003 Lyon', NOW(), 6, 'Équipe Nord', 'en_cours', 1200.00),
+(gen_random_uuid(), 'Plantation de massifs', 'Résidence les Glycines', '12 Rue des Fleurs, 69003 Lyon', 45.762, 4.855, NOW(), 6, 'Équipe Nord', 'en_cours', 1200.00, false),
 
 -- Chantier planifié (pour tester Coordinator Dashboard)
-(gen_random_uuid(), 'Traitement Phyto Stade Municipal', 'Ville de Villeurbanne', 'Rue de la Soie, 69100 Villeurbanne', NOW() + INTERVAL '1 day', 3, 'Équipe Sud', 'planifie', 350.00);
+(gen_random_uuid(), 'Traitement Phyto Stade Municipal', 'Ville de Villeurbanne', 'Rue de la Soie, 69100 Villeurbanne', 45.765, 4.881, NOW() + INTERVAL '1 day', 3, 'Équipe Sud', 'planifie', 350.00, true);
 
 -- 4. Simulation de consommations pour le chantier terminé
 DO $$

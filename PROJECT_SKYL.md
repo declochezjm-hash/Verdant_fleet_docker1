@@ -10,17 +10,24 @@
     *   **Volume :** Isolation du dossier `node_modules` pour éviter les conflits entre Windows (Hôte) et Linux (Conteneur).
     *   **Hot-Reload :** Activation du *polling* (`CHOKIDAR_USEPOLLING=true`) dans `d:\CODE\verdant-fleet\verdant-fleet-docker1\docker-compose.yml` pour garantir la détection des changements de fichiers sur Windows.
     *   **Layout & Navigation :** Implémentation d'une **Sidebar responsive** (`sidebar.tsx`) avec gestion du menu mobile et **badges de notification en temps réel** pour le matériel nécessitant une maintenance.
-    *   **SSR & Stabilité :** Correction des erreurs d'hydratation via des états `mounted` (gestion des dates) et résolution des conflits avec les API globales du navigateur (renommage de l'icône `History` en `HistoryIcon`).
+    *   **Procédure de mise à jour :** Pour appliquer les changements du `.env` ou des dépendances :
+        ```bash
+        docker-compose down
+        docker-compose up --build -d
+        ```
+    *   **SSR & Stabilité :** Correction des erreurs d'hydratation (flicker) via des états `mounted` pour la lecture du `localStorage`. Résolution du conflit de type MIME pour Mapbox dans Docker.
+    *   **Authentification :** Simplification de l'interface de connexion (retrait de l'OAuth GitHub) au profit d'un flux Email/Mot de passe robuste incluant désormais une procédure de **récupération de mot de passe oublié**.
 *   **Client Supabase :** Configuration durcie dans `src/integrations/supabase/client.ts` avec détection des variables manquantes. Supporte les clés commençant par `eyJ` et gère la persistance de session.
 
 ## 🗄️ 2. Base de Données & Backend (Supabase)
 
 *   **Schéma SQL (`d:\CODE\verdant-fleet\verdant-fleet-docker1\supabase_schema.sql`) :**
-    *   Tables : `profiles`, `user_roles`, `tasks`, `products`, `equipment`, `anomalies`, `teams`.
+    *   Tables : `profiles`, `user_roles`, `tasks`, `products`, `equipment`, `anomalies`, `teams`, `suppliers`, `clients`, `purchase_orders`, `invoices`.
     *   Système **RBAC** : Rôles `agent`, `coordinator`, `admin`. Trigger `handle_new_user` pour la création automatique de profils à l'inscription.
     *   **Statut `annule` :** Ajouté à l'énumération `task_status` pour une meilleure traçabilité.
     *   **Priorité des tâches :** Ajout de la colonne `priority` (`normale`, `haute`, `urgente`) à la table `tasks`.
-    *   **Gestion des équipes :** Table `teams` dédiée pour centraliser les noms et les **couleurs personnalisables** par équipe.
+    *   **Gestion des équipes :** Table `teams` avec couleurs personnalisées et support du flag `is_archived` pour préserver l'historique sans encombrer le planning.
+    *   **Gestion des Tiers :** Tables `suppliers` et `clients` incluant les coordonnées de contact (email, tel).
     *   **Row Level Security (RLS) :** Politiques activées pour isoler les données des agents (voient leurs tâches assignées) tout en permettant aux coordinateurs une visibilité globale.
     *   **Stockage Supabase :** Bucket `task-media` configuré avec RLS pour la gestion des photos de chantier (avant/après) et signatures client.
 *   **Logique Métier (RPC) :**
@@ -33,12 +40,16 @@
 
 *   **Gestion des Chantiers (Coordinator) :**
     *   Interface dans `d:\CODE\verdant-fleet\verdant-fleet-docker1\src\components\views\coordinator-view.tsx`.
-    *   **Unification CRUD :** Utilisation du composant réutilisable `TaskCreateDialog` pour la création, modification et suppression des interventions.
+    *   **Unification CRUD :** Utilisation du composant réutilisable `TaskCreateDialog` incluant un **sélecteur de position sur carte** avec **géocodage inverse** (remplit l'adresse au clic) et bouton de géolocalisation.
+    *   **Unification CRUD :** Utilisation du composant réutilisable `TaskCreateDialog` avec **sélecteur de position sur carte**, **géocodage inverse** (remplit l'adresse au clic) et **recherche textuelle d'adresse**.
     *   **Gestion visuelle des priorités :** Badges de couleur dynamiques et filtrage par priorité.
+    *   **Dashboard Interactif :** Les cartes de résumé (Total, En cours, À venir) servent désormais de **filtres rapides** pour le tableau des tâches.
+    *   **Expérience Utilisateur (UX) :** Intégration d'animations de **fondus enchaînés (fade-in) avec effet de décalage (stagger)** lors du filtrage ou du changement d'équipe pour une interface plus fluide.
     *   Filtrage dynamique par équipe (récupéré depuis la DB), recherche textuelle et export **CSV** pour le reporting (basé sur la liste filtrée).
     *   Gestion des suppressions et annulations d'interventions avec dialogues de confirmation.
     *   **Journal des Anomalies :** Nouvelle vue dédiée (`/anomalies`) permettant au coordinateur de consulter les pannes signalées par les agents, de les résoudre et de remettre le matériel en service (`status = OK`).
-    *   Intégration de la `TaskDetailsSheet` pour consulter les preuves terrain (photos, produits) sans quitter la liste.
+    *   Intégration de la `TaskDetailsSheet` pour consulter les preuves terrain (photos, produits, historique, **signature client**) incluant désormais un **bouton d'impression** pour générer des rapports PDF complets.
+    *   Intégration de la `TaskDetailsSheet` avec **Timeline (Historique)** complète, affichage de la **signature client** et bouton d'**impression des rapports d'intervention**.
 *   **Dashboard Coordinateur :**
     *   Migration complète vers Supabase (`coordinator-dashboard.tsx`).
     *   **Filtrage global :** Possibilité de filtrer l'intégralité des statistiques et graphiques par **Équipe** et par **Priorité**.
@@ -58,23 +69,55 @@
     *   `d:\CODE\verdant-fleet\verdant-fleet-docker1\src\components\views\planning-supabase-view.tsx` : Drag & Drop fonctionnel pour déplacer les chantiers.
     *   **Visualisation avancée :** Code couleur par équipe, icônes d'urgence (`Flame`), animations de pulsation pour les tâches critiques et légende des couleurs.
     *   **Flux guidé :** Message d'alerte et redirection si aucune équipe n'est configurée.
-    *   `d:\CODE\verdant-fleet\verdant-fleet-docker1\src\components\views\carte-supabase-view.tsx` : Intégration **Mapbox** avec gestion des tokens locaux et filtrage des marqueurs.
+    *   **Smart Scheduling (OPÉRATIONNEL) :** Intégration de l'API OpenWeatherMap avec affichage d'icônes de prévision sur le **Planning**, la **Carte** et le **Détail des chantiers**. Système d'alerte visuelle (animation bounce et icône triangle) en cas de conflit météo.
+    *   `d:\CODE\verdant-fleet\verdant-fleet-docker1\src\components\views\carte-supabase-view.tsx` : Intégration **Mapbox** optimisée. Persistance du token via `localStorage`. Initialisation de la carte en parallèle du chargement des données. **Géolocalisation en temps réel** ajoutée pour recentrer la carte sur la position de l'utilisateur. Affichage de la distance et du **temps de trajet estimé** vers le chantier le plus proche via l'API Mapbox Directions, avec un bouton "Itinéraire" pour lancer la navigation (Google Maps).
 *   **Comptabilité & Stocks :**
-    *   `d:\CODE\verdant-fleet\verdant-fleet-docker1\src\components\views\settings-view.tsx` : Gestion des taux horaires des agents, **CRUD des équipes avec sélecteur de couleur** et bouton **"Générer les données démo"**.
-    *   `d:\CODE\verdant-fleet\verdant-fleet-docker1\src\components\views\admin-analytics.tsx` et `d:\CODE\verdant-fleet\verdant-fleet-docker1\src\components\views\coordinator-dashboard.tsx` : Graphiques de rentabilité corrigés avec `minWidth={0}` pour Recharts afin d'éviter les crashs de rendu dans les conteneurs flexibles.
+    *   `d:\CODE\verdant-fleet\verdant-fleet-docker1\src\components\views\settings-view.tsx` : 
+        *   **Refonte Équipes :** Dialogue de configuration à deux colonnes (Membres / Matériel). Intégration du **Déboursé Sec** et calcul du **Prix de Vente (TTC)** basé sur des coefficients de frais généraux personnalisables par équipe.
+        *   **Gestion du Parc :** Nouvel onglet pour le CRUD complet du matériel (ajout/édition/suppression de machines).
+        *   **Collaborateurs :** Création manuelle sécurisée avec email pivot.
+        *   **Sécurité & RH :** Système d'invitation avec génération de code, gestion du blocage des accès et procédure de réinitialisation de mot de passe via `/reset-password`.
+    *   `d:\CODE\verdant-fleet\verdant-fleet-docker1\src\components\views\admin-analytics.tsx` : Tableaux de bord financiers avec **filtrage dynamique par équipe** et calcul automatique de la marge brute (Budget - [MO + Matériel + Produits]).
+        *   **Analytique Avancée :** Passage du déboursé sec au **Prix de Revient** dans les graphiques pour une vision de la **Marge Nette** après frais de gestion.
 
-## 🛣️ 4. Routage & Structure
+## ️ 4. Gestion des Pannes & Maintenance Matériel
+
+*   **Cycle de vie des Anomalies :**
+    *   **Signalement (Agent) :** Interface simplifiée sur mobile permettant de déclarer une panne instantanément (bouton d'urgence). Le système lie automatiquement le chantier, l'équipement et l'agent rapporteur.
+    *   **Résolution (Coordinateur) :** Journal centralisé (`/anomalies`) pour le suivi des réparations. La résolution d'une anomalie permet de basculer le matériel du statut "En panne" à "OK".
+*   **Maintenance Préventive :**
+    *   **Compteurs d'heures :** Incrémentation automatique via le RPC `finish_task` à la clôture de chaque intervention, basée sur la durée réelle du chantier.
+    *   **Alertes intelligentes :** Notifications visuelles (badges et dashboard) dès que les heures d'utilisation (`hours_used`) approchent ou dépassent le seuil de maintenance (`hours_for_maintenance`).
+*   **Impact Opérationnel :** Le matériel déclaré "En panne" est visuellement marqué dans les outils d'affectation pour éviter la planification de ressources indisponibles.
+
+## 🛣️ 5. Routage & Structure
 
 *   **TanStack Router :** Arbre de routes synchronisé (`routeTree.gen.ts`) incluant désormais `/coordinator`, `/analytics`, `/stocks`, and `/settings`.
 *   **Layout Racine :** Gestion centralisée des erreurs et de l'authentification dans `__root.tsx`.
-## 🧪 5. État des Données
+## 🧪 6. État des Données
 
 *   **Mock Data :** Un script SQL de génération de données de test (`d:\CODE\verdant-fleet\verdant-fleet-docker1\supabase_mock_data.sql`) est prêt pour peupler l'inventaire, le matériel et les chantiers fictifs, permettant de tester toutes les fonctionnalités.
 
+## 🚀 7. Workflow de Développement
+
+*   **Branche Principale (`main`) :** Contient la structure stable, la configuration Docker optimisée et l'authentification fonctionnelle.
+*   **Dépôt Officiel :** `https://github.com/declochezjm-hash/Verdant-v01.git`
+*   **Initialisation Git :** Pour lier un nouveau dépôt : `git remote add origin <url>`, puis `git push -u origin main`.
+*   **Nouvelles Fonctionnalités :** Tout ajout (gestion des stocks avancée, rapports PDF, etc.) fait désormais l'objet d'une branche dédiée.
+*   **Stabilité Docker :** Rappel - Ne pas modifier `src/routeTree.gen.ts` manuellement, laisser le plugin TanStack Router le générer.
+
+## 🧪 8. Qualité & Tests
+*   **Tests Unitaires :** Validation des fonctions de calcul de marge et des transformations de données.
+*   **Tests E2E :** Validation du workflow complet (Création tâche -> Exécution Agent -> Clôture).
+
+## 📅 9. Prochaines Étapes
+*   Implémentation de rapports PDF automatisés pour les clients.
+*   Optimisation de la gestion des stocks avec alertes de seuil critique.
+
 ---
 
-### 🚦 État actuel : **FULL STACK STABILIZED**
+### 🚦 État actuel : **ADMIN & FIELD READY**
 
-L'écosystème technique est complet et robuste. Le flux de données est bouclé : Planification (Coordinateur) -> Exécution & Photos avec annotations (Agent) -> Analyse, Maintenance & Stocks (Admin). L'infrastructure est optimisée pour le SSR avec Bun et TanStack Start.
+L'écosystème technique est désormais mature. Le flux de données est totalement bouclé : Administration des référentiels (Settings) -> Planification intelligente (Planning) -> Exécution terrain avec preuves médias enrichies (Agent) -> Analyse de rentabilité et gestion des réapprovisionnements (Stocks/Analytics). La sécurité est assurée par le RBAC et des gardes-fous logiques sur les suppressions d'entités critiques.
 
 ---

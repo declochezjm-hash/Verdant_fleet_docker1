@@ -1,10 +1,11 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { Session, User } from "@supabase/supabase-js";
+import { toast } from "sonner";
 
 export type AppRole = "agent" | "coordinator" | "admin";
 
-interface Profile { id: string; name: string; team: string }
+interface Profile { id: string; name: string; team: string; is_blocked?: boolean }
 interface AuthCtx {
   session: Session | null;
   user: User | null;
@@ -48,7 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loadProfile = async (uid: string) => {
     try {
       const [{ data: p, error: profileError }, { data: r, error: rolesError }] = await Promise.all([
-        supabase.from("profiles").select("id,name,team").eq("id", uid).maybeSingle(),
+        supabase.from("profiles").select("id,name,team,is_blocked").eq("id", uid).maybeSingle(),
         supabase.from("user_roles").select("role").eq("user_id", uid),
       ]);
 
@@ -57,6 +58,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       if (rolesError) {
         console.error("Erreur de chargement des rôles :", rolesError);
+      }
+
+      if (p?.is_blocked) {
+        await supabase.auth.signOut();
+        toast.error("Votre compte a été suspendu par l'administration.");
+        return;
       }
 
       setProfile(p ?? null);

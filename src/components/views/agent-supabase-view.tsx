@@ -14,14 +14,17 @@ import { fr } from "date-fns/locale";
 import { Play, CheckCircle2, MapPin, Clock, Camera, QrCode, AlertTriangle, Pencil, Plus, Trash2, Loader2, X, Maximize2, RotateCw, Save, Circle, ArrowUpRight } from "lucide-react";
 import { toast } from "sonner";
 import { SignaturePad } from "@/components/signature-pad";
+import { compressImage } from "@/lib/image-utils";
 
 interface ProductRow { id: string; name: string; category: string; unit: string; stock: number }
 interface TaskRow {
   id: string; title: string; client: string; address: string;
+  project_number: string | null;
   scheduled_at: string; duration: number; status: "planifie" | "en_cours" | "termine";
   started_at: string | null; finished_at: string | null;
   signature_url: string | null; photo_before_url: string | null; photo_after_url: string | null;
   notes: string | null;
+  actual_weather: string | null;
 }
 interface TaskProductRow { id: string; task_id: string; product_id: string; quantity: number; lot_number?: string; dose_per_m2?: number }
 
@@ -109,7 +112,7 @@ export function AgentSupabaseView() {
 
   const [anomalyTaskId, setAnomalyTaskId] = useState<string | null>(null);
 
-  const handleQuickAnomaly = async (equipmentId: string, description: string) => {
+  const handleQuickAnomaly = async (equipmentId: string, description: string, priority: string) => {
     if (!anomalyTaskId || !user) return;
     try {
       const { error: e1 } = await supabase.from("anomalies").insert({
@@ -117,6 +120,7 @@ export function AgentSupabaseView() {
         equipment_id: equipmentId, 
         reported_by: user.id, 
         description,
+        priority,
       });
       if (e1) throw e1;
       await supabase.from("equipment").update({ status: "Maintenance requise" }).eq("id", equipmentId);
@@ -235,43 +239,6 @@ async function uploadMedia(taskId: string, kind: string, blob: Blob, ext: string
   if (error) throw error;
   const { data } = supabase.storage.from("task-media").getPublicUrl(path);
   return data.publicUrl;
-}
-
-/**
- * Compresse une image côté client avant l'upload
- */
-async function compressImage(file: File | Blob, maxWidth = 1200, quality = 0.7): Promise<Blob> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = (event) => {
-      const img = new Image();
-      img.src = event.target?.result as string;
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        let width = img.width;
-        let height = img.height;
-
-        if (width > maxWidth) {
-          height = Math.round((height * maxWidth) / width);
-          width = maxWidth;
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx?.drawImage(img, 0, 0, width, height);
-
-        canvas.toBlob(
-          (blob) => blob ? resolve(blob) : reject(new Error("Compression failed")),
-          'image/jpeg',
-          quality
-        );
-      };
-      img.onerror = reject;
-    };
-    reader.onerror = reject;
-  });
 }
 
 /**
@@ -463,7 +430,10 @@ function TaskCard({ task, onStart, onFinish, onPhoto, onPreview, onAnomaly }: { 
       <CardContent className="space-y-3 p-4">
         <div className="flex items-start justify-between gap-2">
           <div>
-            <div className="font-semibold">{task.title}</div>
+            <div className="flex items-center gap-2">
+              {task.project_number && <span className="text-[10px] font-bold text-muted-foreground bg-muted px-1 rounded">#{task.project_number}</span>}
+              <div className="font-semibold">{task.title}</div>
+            </div>
             <div className="text-sm text-muted-foreground">{task.client}</div>
           </div>
           <Badge variant={task.status === "termine" ? "secondary" : task.status === "en_cours" ? "default" : "outline"}>
@@ -585,6 +555,7 @@ function FinishDialog({ task, products, equipment, taskProducts, onClose, onPrev
   const qc = useQueryClient();
   const { user } = useAuth();
   const [notes, setNotes] = useState(task.notes ?? "");
+  const [actualWeather, setActualWeather] = useState(task.actual_weather ?? "Degage");
   const [signature, setSignature] = useState<string | undefined>(task.signature_url ?? undefined);
   const [localProducts, setLocalProducts] = useState<{
     product_id: string; 
@@ -618,9 +589,9 @@ function FinishDialog({ task, products, equipment, taskProducts, onClose, onPrev
     setLocalProducts(prev => prev.filter(p => p.product_id !== productId));
   };
 
-  const reportAnomaly = async (equipmentId: string, description: string) => {
+  const reportAnomaly = async (equipmentId: string, description: string, priority: string) => {
     const { error: e1 } = await supabase.from("anomalies").insert({
-      task_id: task.id, equipment_id: equipmentId, reported_by: user!.id, description,
+      task_id: task.id, equipment_id: equipmentId, reported_by: user!.id, description, priority
     });
     if (e1) return toast.error(e1.message);
     await supabase.from("equipment").update({ status: "Maintenance requise" }).eq("id", equipmentId);
@@ -651,7 +622,8 @@ function FinishDialog({ task, products, equipment, taskProducts, onClose, onPrev
         p_task_id: task.id,
         p_notes: notes,
         p_signature_url: signatureUrl,
-        p_products: productsPayload
+        p_products: productsPayload,
+        p_actual_weather: actualWeather
       });
 
       if (error) throw new Error(error.message);
@@ -703,6 +675,21 @@ function FinishDialog({ task, products, equipment, taskProducts, onClose, onPrev
                 );
               })}
             </div>
+          </section>
+
+          <section className="space-y-2">
+            <label className="text-sm font-medium">Météo constatée sur place</label>
+            <Select value={actualWeather} onValueChange={setActualWeather}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Choisir la météo..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Degage">☀️ Dégagé / Soleil</SelectItem>
+                <SelectItem value="Nuageux">☁️ Nuageux / Couvert</SelectItem>
+                <SelectItem value="Pluie">🌧️ Pluie / Humide</SelectItem>
+                <SelectItem value="Vent">💨 Vent fort</SelectItem>
+              </SelectContent>
+            </Select>
           </section>
 
           <section className="grid grid-cols-2 gap-2">
@@ -816,9 +803,11 @@ function ScanDialog({ products, onClose, onPick }: { products: ProductRow[]; onC
   );
 }
 
-function AnomalyDialog({ equipment, onClose, onSubmit }: { equipment: { id: string; name: string }[]; onClose: () => void; onSubmit: (id: string, desc: string) => void }) {
+function AnomalyDialog({ equipment, onClose, onSubmit }: { equipment: { id: string; name: string }[]; onClose: () => void; onSubmit: (id: string, desc: string, priority: string) => void }) {
   const [eqId, setEqId] = useState(equipment[0]?.id ?? "");
   const [desc, setDesc] = useState("");
+  const [priority, setPriority] = useState("normale");
+
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
@@ -832,13 +821,25 @@ function AnomalyDialog({ equipment, onClose, onSubmit }: { equipment: { id: stri
             </Select>
           </div>
           <div>
+            <label className="text-sm">Niveau d'urgence</label>
+            <Select value={priority} onValueChange={setPriority}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="normale">🟢 Normale (Entretien)</SelectItem>
+                <SelectItem value="urgente">🔴 Urgente (Bloquant)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
             <label className="text-sm">Description du problème</label>
             <Textarea rows={3} value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Ex : démarrage difficile, fuite d'huile..." />
           </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Annuler</Button>
-          <Button variant="destructive" disabled={!eqId || !desc.trim()} onClick={() => onSubmit(eqId, desc.trim())}>
+          <Button variant="destructive" disabled={!eqId || !desc.trim()} onClick={() => onSubmit(eqId, desc.trim(), priority)}>
             <AlertTriangle className="mr-1 h-4 w-4" /> Signaler
           </Button>
         </DialogFooter>

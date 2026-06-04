@@ -25,6 +25,5 @@ export const getRouter = () => {
   if (_router) return _router;
 
   _router = createRouter();
-
   return _router;
 };

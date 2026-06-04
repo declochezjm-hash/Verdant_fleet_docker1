@@ -4,11 +4,19 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
-import { Loader2, MapPin, Clock, Users, Wrench, Package, AlertTriangle, Euro, Play, CheckCircle2 } from "lucide-react";
+import { Loader2, MapPin, Clock, Users, Wrench, Package, AlertTriangle, Euro, Play, CheckCircle2, Sun, CloudRain, ExternalLink, Pencil, History, Calendar, Printer } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { fr } from "date-fns/locale";
 import { toast } from "sonner";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { TASK_STATUS_LABELS, getStatusVariant } from "@/lib/task-helpers";
+import { TaskCreateDialog } from "./task-create-dialog";
+import { WeatherBadge } from "../../../weather-badge";
 
 interface Props {
   taskId: string | null;
@@ -68,7 +76,7 @@ export function TaskDetailsSheet({ taskId, onOpenChange }: Props) {
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full overflow-y-auto sm:max-w-lg">
+      <SheetContent className="w-full overflow-y-auto sm:max-w-[600px] pr-6">
         {q.isLoading || !q.data ? (
           <div className="flex h-40 items-center justify-center">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -91,21 +99,108 @@ export function TaskDetailsSheet({ taskId, onOpenChange }: Props) {
             });
             const totalProducts = usedProducts.reduce((s, p) => s + Number(p.quantity) * p.price, 0);
 
+            const historyEvents = [
+              { date: t.created_at, label: "Intervention planifiée", icon: Calendar, color: "text-muted-foreground" },
+              ...(t.started_at ? [{ date: t.started_at, label: "Chantier démarré", icon: Play, color: "text-primary" }] : []),
+              ...d.taskProducts.map((tp) => ({
+                date: tp.created_at,
+                label: `Consommation : ${d.products.find(p => p.id === tp.product_id)?.name || "Produit"} (${tp.quantity})`,
+                icon: Package,
+                color: "text-orange-500"
+              })),
+              ...d.anomalies.map((a) => ({
+                date: a.created_at,
+                label: `Panne signalée : ${a.description}`,
+                icon: AlertTriangle,
+                color: "text-destructive"
+              })),
+              ...(t.finished_at ? [{ date: t.finished_at, label: "Chantier clôturé", icon: CheckCircle2, color: "text-success" }] : []),
+            ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
             return (
               <>
                 <SheetHeader className="text-left">
-                  <div className="flex items-start justify-between gap-2">
-                    <SheetTitle className="text-lg">{t.title}</SheetTitle>
-                    <Badge variant={getStatusVariant(t.status)}>{TASK_STATUS_LABELS[t.status] ?? t.status}</Badge>
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="space-y-1">
+                      {t.project_number && (
+                        <Badge variant="secondary" className="text-[10px] font-bold uppercase tracking-wider">N° {t.project_number}</Badge>
+                      )}
+                      <div className="flex items-center gap-2 mb-1">
+                        <WeatherBadge 
+                          lat={t.lat} 
+                          lng={t.lng} 
+                          date={parseISO(t.scheduled_at)}
+                          requiresDryWeather={t.requires_dry_weather}
+                        />
+                        <span className="text-[10px] text-muted-foreground font-medium italic">Prévisions locales</span>
+                      </div>
+                      <SheetTitle className="text-lg">{t.title}</SheetTitle>
+                    </div>
+                    <div className="flex flex-col items-end gap-2 shrink-0">
+                      <Badge variant={getStatusVariant(t.status)} className="w-fit">{TASK_STATUS_LABELS[t.status] ?? t.status}</Badge>
+                      <div className="flex items-center gap-2 print:hidden">
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="h-7 text-[10px] uppercase font-bold gap-1.5 px-2"
+                          onClick={() => window.print()}
+                        >
+                          <Printer className="h-3 w-3" /> Imprimer
+                        </Button>
+                        <TaskCreateDialog 
+                          taskId={t.id} 
+                          trigger={
+                            <Button variant="outline" size="sm" className="h-7 text-[10px] uppercase font-bold gap-1.5 px-2">
+                              <Pencil className="h-3 w-3" /> Éditer
+                            </Button>
+                          } 
+                        />
+                      </div>
+                    </div>
                   </div>
                   <SheetDescription className="text-sm">{t.client}</SheetDescription>
                 </SheetHeader>
+
+                {t.weather_alert_status === 'mismatch' && (
+                  <div className="mt-4 flex items-start gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-destructive">
+                    <AlertTriangle className="h-5 w-5 shrink-0" />
+                    <div>
+                      <p className="text-xs font-bold uppercase">Alerte Conformité Météo</p>
+                      <p className="text-[11px]">Ce chantier a été réalisé sous la pluie alors qu'un temps sec était impératif.</p>
+                    </div>
+                  </div>
+                )}
 
                 <div className="mt-4 space-y-4 text-sm">
                   <div className="grid grid-cols-1 gap-2">
                     <div className="flex items-start gap-2">
                       <MapPin className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                      <span>{t.address || "Adresse non renseignée"}</span>
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span>{t.address || "Adresse non renseignée"}</span>
+                          {t.lat && t.lng && (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button 
+                                  variant="outline" 
+                                  size="sm" 
+                                  className="h-7 px-2 text-[10px] font-bold gap-1 shrink-0 print:hidden" 
+                                >
+                                  <ExternalLink className="h-3 w-3" /> Itinéraire
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&destination=${t.lat},${t.lng}&travelmode=driving`, '_blank')}>
+                                  Google Maps
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => window.open(`https://www.waze.com/ul?ll=${t.lat},${t.lng}&navigate=yes`, '_blank')}>
+                                  Waze
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
+                        </div>
+                      </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <Clock className="h-4 w-4 text-muted-foreground" />
@@ -118,6 +213,18 @@ export function TaskDetailsSheet({ taskId, onOpenChange }: Props) {
                       <Users className="h-4 w-4 text-muted-foreground" />
                       <span className="font-medium">{t.team || "Équipe non assignée"}</span>
                     </div>
+                    {t.requires_dry_weather && (
+                      <div className="flex items-center gap-2 text-amber-600">
+                        <Sun className="h-4 w-4" />
+                        <span className="font-medium">Condition : Temps sec requis</span>
+                      </div>
+                    )}
+                    {t.actual_weather && (
+                      <div className="flex items-center gap-2 text-blue-600">
+                        <CloudRain className="h-4 w-4" />
+                        <span className="font-medium">Météo constatée : {t.actual_weather}</span>
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex gap-2">
@@ -221,6 +328,29 @@ export function TaskDetailsSheet({ taskId, onOpenChange }: Props) {
                     </section>
                   )}
 
+                  <section className="pt-2">
+                    <h3 className="mb-3 flex items-center gap-1.5 text-xs font-semibold uppercase text-muted-foreground">
+                      <History className="h-3.5 w-3.5" /> Historique de l'intervention
+                    </h3>
+                    <div className="relative space-y-4 before:absolute before:left-[11px] before:top-2 before:h-[calc(100%-16px)] before:w-0.5 before:bg-border">
+                      {historyEvents.map((ev, i) => (
+                        <div key={i} className="relative flex gap-3 pl-7">
+                          <div className={`absolute left-0 top-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-background border shadow-sm ${ev.color}`}>
+                            <ev.icon className="h-3 w-3" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[11px] font-medium leading-tight text-foreground truncate" title={ev.label}>
+                              {ev.label}
+                            </p>
+                            <p className="text-[10px] text-muted-foreground">
+                              {format(parseISO(ev.date), "d MMM à HH'h'mm", { locale: fr })}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+
                   <Separator />
 
                   <div className="grid grid-cols-2 gap-2 text-xs">
@@ -239,6 +369,15 @@ export function TaskDetailsSheet({ taskId, onOpenChange }: Props) {
                       <div className="mb-1 font-semibold">Notes</div>
                       <p className="whitespace-pre-wrap text-muted-foreground">{t.notes}</p>
                     </div>
+                  )}
+
+                  {t.signature_url && (
+                    <section className="pt-2">
+                      <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Signature client</h3>
+                      <div className="w-48 h-24 border rounded-md bg-white flex items-center justify-center overflow-hidden shadow-sm">
+                        <img src={t.signature_url} alt="Signature client" className="max-w-full max-h-full object-contain" />
+                      </div>
+                    </section>
                   )}
                 </div>
               </>

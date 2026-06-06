@@ -1,4 +1,6 @@
 import { Link, useRouterState } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 import {
   CalendarDays,
   LayoutDashboard,
@@ -19,6 +21,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuBadge,
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useStore } from "@/lib/mock-data";
@@ -47,6 +50,28 @@ export function AppSidebar() {
   const role = useStore((s) => s.currentRole);
   const path = useRouterState({ select: (r) => r.location.pathname });
   const items = role === "agent" ? agentItems : role === "admin" ? adminItems : coordinatorItems;
+
+  const [mounted, setMounted] = React.useState(false);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Récupération du compte d'alertes réel depuis la vue SQL
+  const { data: alertCount } = useQuery({
+    queryKey: ["equipment-alerts-count"],
+    staleTime: 0, // Force la récupération immédiate
+    gcTime: 0,    // Ne garde rien en mémoire
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from("v_equipment_alerts")
+        .select("*", { count: "exact", head: true });
+      if (error) throw error;
+      console.log("DEBUG - Nombre d'alertes reçues de la vue:", count);
+      return count || 0;
+    },
+    refetchInterval: 30000, // Rafraîchir toutes les 30 secondes
+  });
 
   return (
     <Sidebar collapsible="icon">
@@ -78,6 +103,11 @@ export function AppSidebar() {
                       {!collapsed && <span>{item.title}</span>}
                     </Link>
                   </SidebarMenuButton>
+                  {mounted && item.title === "Parc matériel" && alertCount && alertCount > 0 && (
+                    <SidebarMenuBadge className="bg-destructive text-white font-bold">
+                      {alertCount}
+                    </SidebarMenuBadge>
+                  )}
                 </SidebarMenuItem>
               ))}
             </SidebarMenu>

@@ -1,8 +1,41 @@
-import { useState, useEffect } from 'react';
-import { Sun, Cloud, CloudRain, CloudLightning, Wind, HelpCircle, AlertTriangle, Loader2 } from 'lucide-react';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useQuery } from "@tanstack/react-query";
-import { isSameDay, addDays } from "date-fns";
+import { z } from "zod";
+import { AlertTriangle, Loader2, CloudOff, Droplets, Wind } from "lucide-react";
+import { parseISO } from "date-fns";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+
+interface WeatherData {
+  temp: number;
+  description: string;
+  icon: string;
+  isRainy: boolean;
+  humidity: number;
+  windSpeed: number;
+}
+
+// Schéma Zod pour valider la réponse d'OpenWeatherMap
+const OpenWeatherSchema = z.object({
+  list: z.array(z.object({
+    dt: z.number(),
+    main: z.object({
+      temp: z.number(),
+      humidity: z.number(),
+    }),
+    weather: z.array(z.object({
+      main: z.string(),
+      description: z.string(),
+      icon: z.string(),
+    })),
+    wind: z.object({
+      speed: z.number(),
+    }),
+  })),
+});
 
 interface WeatherBadgeProps {
   lat: number | null;
@@ -12,95 +45,115 @@ interface WeatherBadgeProps {
   variant?: "default" | "compact";
 }
 
-const iconMap: Record<string, any> = {
-  "01": Sun,            // ciel dégagé
-  "02": Cloud,          // quelques nuages
-  "03": Cloud,          // nuages épars
-  "04": Cloud,          // nuages fragmentés
-  "09": CloudRain,      // averse de pluie
-  "10": CloudRain,      // pluie
-  "11": CloudLightning, // orage
-  "13": Wind,           // neige (utilisons Wind faute de mieux)
-  "50": Wind,           // brouillard
-};
+export function WeatherBadge({ lat, lng, date, requiresDryWeather, variant = "default" }: WeatherBadgeProps) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["weather", lat, lng, date.toDateString()],
+    enabled: !!(lat && lng && import.meta.env.VITE_WEATHER_API_KEY),
+    staleTime: 1000 * 60 * 30, // Garder en cache 30 minutes
+    queryFn: async (): Promise<WeatherData> => {
+      const apiKey = import.meta.env.VITE_WEATHER_API_KEY;
+      if (!apiKey) throw new Error("Clé API manquante");
 
-export const WeatherBadge = ({ lat, lng, date, requiresDryWeather, variant = "default" }: WeatherBadgeProps) => {
-  const [mounted, setMounted] = useState(false);
+      const url = `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lng}&appid=${apiKey}&units=metric&lang=fr`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Erreur HTTP: ${response.status}`);
+      
+      const json = await response.json();
+      const parsed = OpenWeatherSchema.parse(json);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-  
-  const isCompact = variant === "compact";
+      const targetTs = date.getTime();
+      const closest = parsed.list.reduce((prev, curr) => {
+        return Math.abs(curr.dt * 1000 - targetTs) < Math.abs(prev.dt * 1000 - targetTs) ? curr : prev;
+      });
 
-  const apiKey = import.meta.env.VITE_WEATHER_API_KEY;
-  const hasValidKey = !!apiKey && apiKey.length > 10;
-  const isTooFar = date > addDays(new Date(), 5); // Limite de l'API gratuite OWM (5 jours)
-
-  const { data: forecast, isLoading } = useQuery({
-    queryKey: ["weather", lat, lng],
-    queryFn: async () => {
-      if (lat === null || lng === null || !hasValidKey) return null;
-      const response = await fetch(
-        `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lng}&appid=${apiKey}&units=metric&lang=fr`
-      );
-      if (!response.ok) throw new Error("Météo indisponible");
-      return response.json();
-    },
-    enabled: lat !== null && lng !== null && hasValidKey && !isTooFar,
-    staleTime: 1000 * 60 * 30, // Mise en cache de 30 minutes
+      return {
+        temp: closest.main.temp,
+        description: closest.weather[0].description,
+        icon: closest.weather[0].icon,
+        isRainy: closest.weather[0].main === "Rain" || closest.weather[0].main === "Drizzle",
+        humidity: closest.main.humidity,
+        windSpeed: closest.wind.speed
+      };
+    }
   });
 
-  if (!mounted || lat === null || lng === null) return null;
-  
-  // Si pas de clé ou date trop loin, on affiche un état "inconnu" au lieu de null
-  const noData = !hasValidKey || isTooFar;
-  
-  if (isLoading) return <Loader2 className="w-3 h-3 animate-spin text-muted-foreground/50" />;
+  if (!lat || !lng) return null;
 
-  const dayForecast = forecast?.list?.find((item: any) => 
-    isSameDay(new Date(item.dt * 1000), date)
-  ) || forecast?.list?.[0];
-
-  if (!dayForecast || noData) {
-    return isCompact ? null : (
-      <div className="flex items-center gap-1 text-[9px] font-bold px-1 py-0.5 rounded bg-muted text-muted-foreground opacity-50">
-        <HelpCircle className="w-2.5 h-2.5" />
-        <span>--°C</span>
+  if (!import.meta.env.VITE_WEATHER_API_KEY) {
+    return (
+      <div className="flex items-center gap-1 opacity-40 grayscale" title="VITE_WEATHER_API_KEY manquante">
+        <CloudOff className="h-3 w-3" />
+        <span className="text-[8px]">API?</span>
       </div>
     );
   }
 
-  const iconCode = dayForecast.weather[0].icon.substring(0, 2);
-  const Icon = iconMap[iconCode] || HelpCircle;
-  const temp = Math.round(dayForecast.main.temp);
-  const description = dayForecast.weather[0].description;
-  const isRainy = ["09", "10", "11"].includes(iconCode);
-  const hasConflict = requiresDryWeather && isRainy;
+  if (isLoading) return <Loader2 className="h-3 w-3 animate-spin opacity-30" />;
+  
+  if (error || !data) {
+    return <AlertTriangle className="h-3 w-3 text-amber-500 opacity-50" title="Erreur météo" />;
+  }
+
+  const isConflict = requiresDryWeather && data.isRainy;
+  const description = data.description.charAt(0).toUpperCase() + data.description.slice(1);
 
   return (
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <div className={`flex items-center gap-1 text-[9px] font-bold transition-colors ${
-            isCompact ? "" : "px-1 py-0.5 rounded"
-          } ${
-            hasConflict 
-              ? "bg-destructive text-destructive-foreground animate-bounce" 
-              : isCompact ? "text-white" : "bg-secondary/80 text-secondary-foreground"
-          }`}>
-            {hasConflict ? <AlertTriangle className="w-2.5 h-2.5" /> : <Icon className="w-2.5 h-2.5" />}
-            <span>{temp}°C</span>
-          </div>
+          {variant === "compact" ? (
+            <div className={`flex items-center gap-0.5 rounded px-1 py-0.5 text-[9px] font-bold cursor-help ${isConflict ? "bg-destructive text-white animate-bounce" : "bg-background/50 text-foreground"}`}>
+              <img src={`https://openweathermap.org/img/wn/${data.icon}.png`} className="h-4 w-4" alt="" />
+              <span>{Math.round(data.temp)}°</span>
+            </div>
+          ) : (
+            <div 
+              className={`flex items-center gap-1 rounded-full px-1.5 py-0.5 border shadow-sm cursor-help ${isConflict ? "bg-destructive/10 border-destructive text-destructive animate-pulse" : "bg-muted/50 border-muted-foreground/20 text-muted-foreground"}`}
+            >
+              <img src={`https://openweathermap.org/img/wn/${data.icon}.png`} className="h-4 w-4" alt="" />
+              <span className="text-[10px] font-bold">{Math.round(data.temp)}°C</span>
+              {isConflict && <AlertTriangle className="h-3 w-3 fill-current" />}
+            </div>
+          )}
         </TooltipTrigger>
-        <TooltipContent>
-          <div className="text-xs">
-            <p className="font-bold capitalize">{description}</p>
-            <p>{temp}°C (Ressenti {Math.round(dayForecast.main.feels_like)}°C)</p>
-            {hasConflict && <p className="text-destructive font-bold mt-1">⚠️ Temps sec requis</p>}
+        <TooltipContent className="p-3 w-48 shadow-xl">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 border-b border-border pb-1.5 mb-1">
+              <img src={`https://openweathermap.org/img/wn/${data.icon}.png`} className="h-8 w-8" alt="" />
+              <div>
+                <p className="text-xs font-bold leading-none">{description}</p>
+                <p className="text-[10px] text-muted-foreground">Prévisions pour le chantier</p>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-2">
+              <div className="flex items-center gap-1.5">
+                <Droplets className="h-3.5 w-3.5 text-blue-500" />
+                <div className="text-[10px]">
+                  <span className="block font-bold leading-none">{data.humidity}%</span>
+                  <span className="text-[8px] text-muted-foreground uppercase font-medium">Humidité</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Wind className="h-3.5 w-3.5 text-slate-400" />
+                <div className="text-[10px]">
+                  <span className="block font-bold leading-none">{Math.round(data.windSpeed * 3.6)} km/h</span>
+                  <span className="text-[8px] text-muted-foreground uppercase font-medium">Vent</span>
+                </div>
+              </div>
+            </div>
+
+            {isConflict && (
+              <div className="mt-1 flex items-start gap-1.5 rounded bg-destructive/10 p-1.5 text-destructive border border-destructive/20">
+                <AlertTriangle className="h-3 w-3 shrink-0 mt-0.5" />
+                <p className="text-[9px] font-bold leading-tight uppercase">
+                  Alerte : Pluie prévue alors que le chantier nécessite un temps sec.
+                </p>
+              </div>
+            )}
           </div>
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
   );
-};
+}

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useState } from "react";
+import * as React from "react";
 import {
   Outlet,
   Link,
@@ -12,7 +12,7 @@ import { Sidebar } from "@/components/views/sidebar";
 import { RoleSwitcher } from "@/components/role-switcher";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider } from "@/lib/auth-context";
-import { Menu, X } from "lucide-react";
+import { Menu, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 import appCss from "../styles.css?url";
@@ -82,7 +82,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "twitter:card", content: "summary_large_image" },
       { property: "og:type", content: "website" },
     ],
-    links: [{ rel: "stylesheet", href: appCss }],
+    links: [
+      { rel: "stylesheet", href: appCss },
+      { rel: "icon", type: "image/x-icon", href: "/favicon.ico" }
+    ],
   }),
   shellComponent: RootShell,
   component: RootComponent,
@@ -116,7 +119,13 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
+  const [mounted, setMounted] = React.useState(false);
+
+  // Empêche le mismatch Desktop/Mobile lors du premier rendu SSR
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -132,7 +141,7 @@ function RootComponent() {
             <div className="fixed inset-0 z-50 flex md:hidden">
               <div className="fixed inset-0 bg-background/80 backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)} />
               <div className="relative flex w-64 flex-col">
-                <Sidebar />
+                {mounted && <Sidebar />}
                 <Button variant="ghost" size="icon" className="absolute right-2 top-2" onClick={() => setIsMobileMenuOpen(false)}>
                   <X className="h-4 w-4" />
                 </Button>
@@ -151,7 +160,9 @@ function RootComponent() {
               <RoleSwitcher />
             </header>
             <main className="flex-1 overflow-x-hidden">
-              <Outlet />
+              <React.Suspense fallback={<div className="flex h-full items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>}>
+                <Outlet />
+              </React.Suspense>
             </main>
           </div>
         </div>

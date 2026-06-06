@@ -32,6 +32,7 @@ type SidebarContextProps = {
   openMobile: boolean;
   setOpenMobile: (open: boolean) => void;
   isMobile: boolean;
+  mounted: boolean;
   toggleSidebar: () => void;
 };
 
@@ -68,6 +69,11 @@ const SidebarProvider = React.forwardRef<
   ) => {
     const isMobile = useIsMobile();
     const [openMobile, setOpenMobile] = React.useState(false);
+    const [mounted, setMounted] = React.useState(false);
+
+    React.useEffect(() => {
+      setMounted(true);
+    }, []);
 
     // This is the internal state of the sidebar.
     // We use openProp and setOpenProp for control from outside the component.
@@ -118,9 +124,10 @@ const SidebarProvider = React.forwardRef<
         isMobile,
         openMobile,
         setOpenMobile,
+        mounted,
         toggleSidebar,
       }),
-      [state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar],
+      [state, open, setOpen, isMobile, openMobile, setOpenMobile, mounted, toggleSidebar],
     );
 
     return (
@@ -169,7 +176,7 @@ const Sidebar = React.forwardRef<
     },
     ref,
   ) => {
-    const { isMobile, state, openMobile, setOpenMobile } = useSidebar();
+    const { isMobile, state, openMobile, setOpenMobile, mounted } = useSidebar();
 
     if (collapsible === "none") {
       return (
@@ -186,7 +193,9 @@ const Sidebar = React.forwardRef<
       );
     }
 
-    if (isMobile) {
+    // On n'affiche la version mobile (Sheet) qu'après le montage sur le client
+    // pour éviter le mismatch avec le rendu serveur qui est par défaut Desktop.
+    if (mounted && isMobile) {
       return (
         <Sheet open={openMobile} onOpenChange={setOpenMobile} {...props}>
           <SheetContent

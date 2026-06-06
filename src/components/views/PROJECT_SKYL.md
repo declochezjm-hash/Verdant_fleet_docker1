@@ -20,7 +20,7 @@
         docker-compose down
         docker-compose up --build -d
         ```
-    *   **Stabilité UI (EN COURS) :** Investigation des erreurs 500 sur `/auth`. Désactivation du rafraîchissement de session et de la détection d'URL automatique côté serveur (Bun) pour stabiliser le rendu SSR de Supabase.
+    *   **Stabilité UI :** Correction des erreurs d'hydratation (flicker) via des états `mounted` et gestion robuste du `localStorage`.
     *   **Authentification :** Flux Email/Mot de passe sécurisé. Gestion du **blocage des comptes** et procédure de **récupération de mot de passe** via `/reset-password`.
     *   **Utilitaires :** Centralisation de la compression d'images (`image-utils.ts`) et de la gestion chromatique des équipes (`team-utils.ts`).
     *   **Sécurité des types :** Intégration de **Zod** pour la validation des réponses API externes (OpenWeatherMap).
@@ -38,10 +38,10 @@
     *   **Priorité des tâches :** Ajout de la colonne `priority` (`normale`, `haute`, `urgente`) à la table `tasks`.
     *   **Gestion des équipes :** Table `teams` avec couleurs personnalisées et support du flag `is_archived` pour préserver l'historique sans encombrer le planning.
     *   **Finance d'Équipe :** Colonnes de frais généraux (`overhead_labor_pct`, `overhead_equip_pct`, etc.), marge et taxes directement rattachées à la configuration de l'équipe.
-    *   **Parc Matériel :** Support complet des identifiants internes et détails techniques. Les badges de statut sont désormais cliquables pour une mise à jour rapide (OK/Panne).
-    *   **Vues SQL (STABILISÉ) :** Vue `v_equipment_alerts` opérationnelle. Le parc est fixé à **27/28 machines actives**. Cohérence parfaite entre le badge de la sidebar (5) et la liste filtrable suite à la levée des restrictions RLS sur `equipment`.
+    *   **Parc Matériel :** Ajout des colonnes `team`, `hourly_cost`, `hours_for_maintenance` et du flag `is_archived`.
+    *   **Vues SQL (DÉPLOYÉ) :** Implémentation de `v_equipment_alerts`. **Standard de Flotte :** Le parc est fixé à **27/28 machines actives**. **Résolution SSR & RLS :** Correction des erreurs d'hydratation et levée des restrictions de sécurité Supabase. La liste `SettingsView` affiche désormais l'intégralité du parc synchronisé avec le badge (chiffre 5).
     *   **Gestion des Tiers :** Tables `suppliers` et `clients` incluant les coordonnées de contact (email, tel).
-    *   **Sécurité des Données :** Filtrage `task_assignments!inner(user_id)` garantissant que les agents ne voient que leurs interventions sur la carte et le planning.
+    *   **Row Level Security (RLS) :** Politiques activées pour isoler les données des agents (voient leurs tâches assignées) tout en permettant aux coordinateurs une visibilité globale.
     *   **Stockage Supabase :** Bucket `task-media` configuré avec RLS pour la gestion des photos de chantier (avant/après) et signatures client.
 *   **Logique Métier (RPC) :**
     *   Implémentation de la fonction `finish_task` (`d:\CODE\verdant-fleet\verdant-fleet-docker1\supabase\migrations\20260508090000_add_finish_task_rpc.sql`).
@@ -54,7 +54,7 @@
 *   **Gestion des Chantiers (Coordinator) :**
     *   Interface dans `d:\CODE\verdant-fleet\verdant-fleet-docker1\src\components\views\coordinator-view.tsx`.
     *   **Unification CRUD :** `TaskCreateDialog` avec sélecteur GPS, géocodage inverse, recherche d'adresse et **estimation financière en temps réel** (Déboursé Sec Total).
-    *   **Gestion visuelle des priorités :** Badges dynamiques, filtrage par priorité et recherche par machine/ID.
+    *   **Gestion visuelle des priorités :** Badges de couleur dynamiques et filtrage par priorité.
     *   **Dashboard Interactif :** Les cartes de résumé (Total, En cours, À venir) servent désormais de **filtres rapides** pour le tableau des tâches.
     *   **Expérience Utilisateur (UX) :** Intégration d'animations de **fondus enchaînés (fade-in) avec effet de décalage (stagger)** lors du filtrage ou du changement d'équipe pour une interface plus fluide.
     *   Filtrage dynamique par équipe (récupéré depuis la DB), recherche textuelle et export **CSV** pour le reporting (basé sur la liste filtrée).
@@ -100,11 +100,8 @@
     *   **Résolution (Coordinateur) :** Journal centralisé (`/anomalies`) pour le suivi des réparations. La résolution d'une anomalie permet de basculer le matériel du statut "En panne" à "OK".
 *   **Maintenance Préventive :**
     *   **Compteurs d'heures :** Incrémentation automatique via le RPC `finish_task` à la clôture de chaque intervention, basée sur la durée réelle du chantier.
-    *   **Journal des Anomalies :** Support des notes de réparation et des photos "Après" pour la remise en service du matériel.
-    *   **Analytique Matériel :** Chaque engin dispose désormais d'un **historique graphique d'utilisation sur 30 jours** (Recharts) et d'une fiche technique détaillée (S/N, Immatriculation, Motorisation).
-    *   **Support Utilisateur :** Centre d'aide interactif et recherchable intégré à la sidebar, s'adaptant dynamiquement au rôle de l'utilisateur.
+    *   **Alertes intelligentes (TERMINÉ) :** Le badge rouge (`AppSidebar.tsx`) affiche **2 alertes réelles**. La liste dans `SettingsView` affiche désormais les **28 engins** sans filtre de cache.
 *   **Impact Opérationnel :** Le matériel déclaré "En panne" est visuellement marqué dans les outils d'affectation pour éviter la planification de ressources indisponibles.
-*   **Analytique Matériel :** Implémentation d'une barre de recherche, d'un filtrage par type et d'un bouton d'urgence. Ajout d'un compteur d'heures restantes et d'un **historique graphique d'utilisation sur 30 jours** via Recharts pour chaque engin.
 
 ## 🛣️ 5. Routage & Structure
 

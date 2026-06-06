@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -46,6 +47,7 @@ function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
 const TOKEN_KEY = "mapbox_public_token";
 
 export function CarteSupabaseView() {
+  const { user, primaryRole } = useAuth();
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
   const [token, setToken] = useState<string>("");
   const [tokenInput, setTokenInput] = useState("");
@@ -78,13 +80,18 @@ export function CarteSupabaseView() {
   }, []);
 
   const q = useQuery({
-    queryKey: ["carte-tasks"],
+    queryKey: ["carte-tasks", user?.id, primaryRole],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("tasks")
-        .select("id,project_number,title,client,address,team,scheduled_at,status,lat,lng,requires_dry_weather")
-        .neq("status", "termine")
-        .order("scheduled_at");
+        .select("id,project_number,title,client,address,team,scheduled_at,status,lat,lng,requires_dry_weather, task_assignments!inner(user_id)")
+        .neq("status", "termine");
+
+      if (primaryRole === "agent" && user) {
+        query = query.eq("task_assignments.user_id", user.id);
+      }
+
+      const { data, error } = await query.order("scheduled_at");
       if (error) throw error;
       return (data ?? []) as MapTask[];
     },
@@ -520,6 +527,12 @@ export function CarteSupabaseView() {
                       <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Plus proche</p>
                       <p className="text-xs font-bold truncate max-w-[120px]">{closestTask.task.title}</p>
                     </div>
+                  <WeatherBadge 
+                    lat={closestTask.task.lat} 
+                    lng={closestTask.task.lng} 
+                    date={parseISO(closestTask.task.scheduled_at)}
+                    requiresDryWeather={closestTask.task.requires_dry_weather}
+                  />
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-black text-primary">

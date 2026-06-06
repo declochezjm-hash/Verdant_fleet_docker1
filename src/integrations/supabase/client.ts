@@ -39,15 +39,15 @@ const supabaseKey = isConfigured ? SUPABASE_PUBLISHABLE_KEY : 'placeholder-anon-
 
 export const supabase = createClient<Database>(supabaseUrl, supabaseKey, {
   auth: {
-    // Utilisation d'un mock de stockage côté serveur pour éviter l'erreur "window is not defined"
+    // Mock robuste pour le SSR pour éviter les crashs lors des tentatives de lecture/écriture
     storage: typeof window !== 'undefined' ? window.localStorage : {
-      getItem: () => null,
-      setItem: () => {},
-      removeItem: () => {},
+      getItem: (key: string) => null,
+      setItem: (key: string, value: string) => {},
+      removeItem: (key: string) => {},
     },
     persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
+    autoRefreshToken: typeof window !== 'undefined',
+    detectSessionInUrl: typeof window !== 'undefined',
     flowType: 'pkce'
   }
 });

@@ -4,8 +4,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, AlertTriangle, CheckCircle2, Clock, Wrench, User, Filter, Camera, Image as ImageIcon, X, RotateCw } from "lucide-react";
+import { Loader2, AlertTriangle, CheckCircle2, Clock, Wrench, User, Filter, Camera, Image as ImageIcon, X, RotateCw, Search } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { fr } from "date-fns/locale";
 import { toast } from "sonner";
@@ -20,7 +22,8 @@ interface AnomalyWithJoins {
   priority: string;
   photo_url: string | null;
   repair_photo_url: string | null;
-  equipment: { id: string; name: string; type: string } | null;
+  repair_notes: string | null;
+  equipment: { id: string; name: string; type: string; internal_id: string | null } | null;
   tasks: { id: string; title: string; client: string } | null;
   profiles: { id: string; name: string } | null;
 }
@@ -28,18 +31,19 @@ interface AnomalyWithJoins {
 export function AnomaliesView() {
   const qc = useQueryClient();
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
+  const [searchTerm, setSearchTerm] = useState("");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
-  const { data: anomalies, isLoading } = useQuery({
+  const { data: anomalies, isLoading, error } = useQuery({
     queryKey: ["all-anomalies"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("anomalies")
         .select(`
-          id, description, resolved, created_at, priority, photo_url, repair_photo_url,
-          equipment(id, name, type),
-          tasks(id, title, client),
-          profiles(id, name)
+          *,
+          equipment:equipment_id(id, name, type, internal_id),
+          tasks:task_id(id, title, client),
+          profiles:reported_by(id, name)
         `)
         .order("created_at", { ascending: false });
       
@@ -48,13 +52,19 @@ export function AnomaliesView() {
     },
   });
 
+  // Afficher l'erreur en cas d'échec de la requête
+  useEffect(() => {
+    if (error) toast.error("Erreur de chargement : " + (error as Error).message);
+  }, [error]);
+
   const resolveMut = useMutation({
-    mutationFn: async ({ anomaly, repairPhotoUrl }: { anomaly: AnomalyWithJoins, repairPhotoUrl?: string }) => {
+    mutationFn: async ({ anomaly, repairPhotoUrl, repairNotes }: { anomaly: AnomalyWithJoins, repairPhotoUrl?: string, repairNotes?: string }) => {
       // 1. Marquer l'anomalie comme résolue
       const { error: e1 } = await supabase
         .from("anomalies")
         .update({ 
           resolved: true,
+          repair_notes: repairNotes || null,
           repair_photo_url: repairPhotoUrl || anomaly.repair_photo_url 
         })
         .eq("id", anomaly.id);
@@ -81,9 +91,17 @@ export function AnomaliesView() {
 
   // On calcule tout avant le moindre 'return' conditionnel
   const { openAnomalies, resolvedAnomalies, filteredCount } = useMemo(() => {
-    const filtered = anomalies?.filter(a => 
-      priorityFilter === "all" || a.priority === priorityFilter
-    ) ?? [];
+    const filtered = anomalies?.filter(a => {
+      const matchesPriority = priorityFilter === "all" || 
+        (a.priority?.toLowerCase() === priorityFilter.toLowerCase());
+      
+      const term = searchTerm.toLowerCase().trim();
+      const matchesSearch = !term || 
+        (a.equipment?.name?.toLowerCase().includes(term)) || 
+        (a.equipment?.internal_id?.toLowerCase().includes(term));
+
+      return matchesPriority && matchesSearch;
+    }) ?? [];
     
     return {
       openAnomalies: filtered.filter(a => !a.resolved),
@@ -101,17 +119,28 @@ export function AnomaliesView() {
           <h1 className="text-2xl font-bold">Journal des Anomalies</h1>
           <p className="text-sm text-muted-foreground">Suivi des pannes signalées par les agents terrain.</p>
         </div>
-        <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-          <SelectTrigger className="w-[180px]">
-            <Filter className="mr-2 h-4 w-4 text-muted-foreground" />
-            <SelectValue placeholder="Priorité" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Toutes priorités</SelectItem>
-            <SelectItem value="normale">Normale</SelectItem>
-            <SelectItem value="urgente">Urgente</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          <div className="relative flex-1 sm:w-64">
+            <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input 
+              placeholder="Rechercher un engin (Nom, N°)..." 
+              className="pl-9 h-10 sm:h-9" 
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+            <SelectTrigger className="w-full sm:w-[180px] h-10 sm:h-9">
+              <Filter className="mr-2 h-4 w-4 text-muted-foreground" />
+              <SelectValue placeholder="Priorité" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Toutes priorités</SelectItem>
+              <SelectItem value="normale">Normale</SelectItem>
+              <SelectItem value="urgente">Urgente</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       <section className="space-y-4">
@@ -123,7 +152,7 @@ export function AnomaliesView() {
           <p className="text-sm text-muted-foreground italic">Aucune panne en attente. Tout est opérationnel ! 🌿</p>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {openAnomalies.map((a) => (
+            {openAnomalies.map((a) => ( // Pass repairNotes to AnomalyCard
               <AnomalyCard key={a.id} anomaly={a} onResolve={(photo) => resolveMut.mutate({ anomaly: a, repairPhotoUrl: photo })} isPending={resolveMut.isPending} onPreview={setPreviewUrl} />
             ))}
           </div>
@@ -135,7 +164,7 @@ export function AnomaliesView() {
           <h2 className="text-lg font-semibold text-muted-foreground">Historique des résolutions</h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 opacity-80 grayscale-[50%]">
             {resolvedAnomalies.map((a) => (
-              <AnomalyCard key={a.id} anomaly={a} onPreview={setPreviewUrl} />
+              <AnomalyCard key={a.id} anomaly={a} onPreview={setPreviewUrl} /> // Display repairNotes for resolved anomalies
             ))}
           </div>
         </section>
@@ -156,9 +185,10 @@ export function AnomaliesView() {
   );
 }
 
-function AnomalyCard({ anomaly: a, onResolve, isPending, onPreview }: { anomaly: AnomalyWithJoins; onResolve?: (photoUrl?: string) => void; isPending?: boolean; onPreview: (url: string) => void }) {
+function AnomalyCard({ anomaly: a, onResolve, isPending, onPreview }: { anomaly: AnomalyWithJoins; onResolve?: (repairPhotoUrl?: string, repairNotes?: string) => void; isPending?: boolean; onPreview: (url: string) => void }) {
   const [repairPhoto, setRepairPhoto] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [repairNotes, setRepairNotes] = useState(a.repair_notes || "");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -198,6 +228,7 @@ function AnomalyCard({ anomaly: a, onResolve, isPending, onPreview }: { anomaly:
           </span>
         </div>
         <CardTitle className="text-sm font-bold mt-2">
+          {a.equipment?.internal_id && <span className="text-primary mr-1.5">{a.equipment.internal_id}</span>}
           {a.equipment?.name ?? "Matériel inconnu"}
         </CardTitle>
         <p className="text-[10px] text-muted-foreground font-medium">{a.equipment?.type}</p>
@@ -245,6 +276,16 @@ function AnomalyCard({ anomaly: a, onResolve, isPending, onPreview }: { anomaly:
           "{a.description || "Pas de description fournie."}"
         </div>
 
+        {!a.resolved && (
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-muted-foreground">Notes de réparation</label>
+            <Textarea value={repairNotes} onChange={(e) => setRepairNotes(e.target.value)} placeholder="Détails de l'intervention, pièces changées..." rows={2} />
+          </div>
+        )}
+        {a.resolved && a.repair_notes && (
+          <div className="rounded-md p-2 text-xs bg-muted text-muted-foreground border border-muted-foreground/20"><span className="font-semibold block mb-1">Notes de réparation :</span>"{a.repair_notes}"</div>
+        )}
+
         <div className="space-y-1 text-[11px]">
           <div className="flex items-center gap-1.5 text-muted-foreground">
             <Clock className="h-3 w-3" />
@@ -259,7 +300,7 @@ function AnomalyCard({ anomaly: a, onResolve, isPending, onPreview }: { anomaly:
         {onResolve && (
           <Button 
             className="w-full h-9 gap-2 mt-2 bg-success text-success-foreground hover:bg-success/90" 
-            onClick={() => onResolve(repairPhoto || undefined)}
+            onClick={() => onResolve(repairPhoto || undefined, repairNotes.trim() !== "" ? repairNotes : undefined)}
             disabled={isPending}
           >
             {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}

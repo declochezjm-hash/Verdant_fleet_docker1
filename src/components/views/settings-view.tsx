@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Save, UserCog, Euro, Loader2, Database, Rocket, Users, Plus, Trash2, Palette, Building2, User, Package, Pencil, Search, Settings as SettingsIcon, Filter, Wrench, Archive, Key, Copy, RefreshCw, ShieldAlert, ShieldCheck, History } from "lucide-react";
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { format, parseISO } from "date-fns";
+import { fr } from "date-fns/locale";
 import { Switch } from "@/components/ui/switch";
 import {
   DropdownMenu,
@@ -98,12 +100,17 @@ export function SettingsView() {
 
   // Récupération du parc matériel pour l'affectation aux équipes
   const { data: allEquipment = [], isLoading: loadingEquipment } = useQuery({
-    queryKey: ["settings-equipment"],
+    queryKey: ["settings-equipment"], // Clé unifiée pour tout le projet
     queryFn: async () => {
-      const { data, error } = await supabase.from("equipment").select("id, name, type, status, assigned_to, team, hourly_cost, hours_for_maintenance").order("name");
+      const { data, error, count } = await supabase
+        .from("equipment")
+        .select("*")
+        .order("name");
       if (error) throw error;
-      return data;
-    }
+      return data || [];
+    },
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   // Récupération des chantiers futurs pour validation avant archivage
@@ -939,6 +946,7 @@ export function SettingsView() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b bg-muted/50 text-left text-xs uppercase text-muted-foreground font-semibold">
+                      <th className="px-4 py-3">N°</th>
                       <th className="px-4 py-3">Matériel</th>
                       <th className="px-4 py-3">Type</th>
                       <th className="px-4 py-3">Statut</th>
@@ -953,6 +961,7 @@ export function SettingsView() {
                     ) : (
                       allEquipment.map((eq) => (
                         <tr key={eq.id} className="transition-colors hover:bg-muted/30">
+                          <td className="px-4 py-3 font-mono text-xs text-primary font-bold">{eq.internal_id || "-"}</td>
                           <td className="px-4 py-3 font-medium">{eq.name}</td>
                           <td className="px-4 py-3 text-xs">{eq.type}</td>
                           <td className="px-4 py-3">
@@ -1490,7 +1499,35 @@ export function SettingsView() {
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>{editingEquipment?.id ? 'Modifier' : 'Nouveau'} Matériel</DialogTitle></DialogHeader>
           <div className="space-y-4 py-2">
-            <div className="grid gap-2"><Label>Nom de la machine</Label><Input value={editingEquipment?.name || ''} onChange={e => setEditingEquipment({...editingEquipment, name: e.target.value})} placeholder="Ex: Tondeuse Autoportée X1..." /></div>
+            <div className="grid grid-cols-4 gap-4">
+              <div className="grid gap-2 col-span-1">
+                <Label>N° Immo</Label>
+                <Input value={editingEquipment?.internal_id || ''} onChange={e => setEditingEquipment({...editingEquipment, internal_id: e.target.value})} placeholder="001" />
+              </div>
+              <div className="grid gap-2 col-span-3">
+                <Label>Nom de la machine</Label>
+                <Input value={editingEquipment?.name || ''} onChange={e => setEditingEquipment({...editingEquipment, name: e.target.value})} placeholder="Ex: Tondeuse Autoportée X1..." />
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Numéro de série</Label>
+                <Input value={editingEquipment?.serial_number || ''} onChange={e => setEditingEquipment({...editingEquipment, serial_number: e.target.value})} placeholder="S/N..." />
+              </div>
+              <div className="grid gap-2">
+                <Label>Motorisation</Label>
+                <Input value={editingEquipment?.motorization_type || ''} onChange={e => setEditingEquipment({...editingEquipment, motorization_type: e.target.value})} placeholder="Essence, 2T, Elec..." />
+              </div>
+            </div>
+
+            {editingEquipment?.type === 'Véhicule' && (
+              <div className="grid gap-2">
+                <Label>Plaque d'immatriculation</Label>
+                <Input value={editingEquipment?.registration_number || ''} onChange={e => setEditingEquipment({...editingEquipment, registration_number: e.target.value})} placeholder="AA-123-BB" />
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2"><Label>Type</Label>
                 <Select value={editingEquipment?.type} onValueChange={v => setEditingEquipment({...editingEquipment, type: v})}>

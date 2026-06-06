@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -24,6 +25,7 @@ interface Assign { task_id: string; user_id: string }
 interface TaskEquip { task_id: string; equipment_id: string }
 
 export function PlanningSupabaseView() {
+  const { user, primaryRole } = useAuth();
   const qc = useQueryClient();
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
   const [teamFilter, setTeamFilter] = useState<string>("all");
@@ -37,11 +39,16 @@ export function PlanningSupabaseView() {
   }, []);
 
   const tasksQ = useQuery({
-    queryKey: ["planning-tasks"],
+    queryKey: ["planning-tasks", user?.id, primaryRole],
     queryFn: async () => {
-      const { data, error } = await supabase.from("tasks")
-        .select("id,title,client,team,scheduled_at,duration,status,priority,lat,lng,requires_dry_weather")
-        .order("scheduled_at");
+      let query = supabase.from("tasks")
+        .select("id,title,client,team,scheduled_at,duration,status,priority,lat,lng,requires_dry_weather, task_assignments!inner(user_id)");
+      
+      if (primaryRole === "agent" && user) {
+        query = query.eq("task_assignments.user_id", user.id);
+      }
+
+      const { data, error } = await query.order("scheduled_at");
       if (error) throw error;
       return (data ?? []) as Task[];
     },

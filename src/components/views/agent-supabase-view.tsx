@@ -15,6 +15,7 @@ import { Play, CheckCircle2, MapPin, Clock, Camera, QrCode, AlertTriangle, Penci
 import { toast } from "sonner";
 import { SignaturePad } from "@/components/signature-pad";
 import { compressImage } from "@/lib/image-utils";
+import { WeatherBadge } from "../../../weather-badge";
 
 interface ProductRow { id: string; name: string; category: string; unit: string; stock: number }
 interface TaskRow {
@@ -22,6 +23,7 @@ interface TaskRow {
   project_number: string | null;
   scheduled_at: string; duration: number; status: "planifie" | "en_cours" | "termine";
   started_at: string | null; finished_at: string | null;
+  lat: number | null; lng: number | null; requires_dry_weather: boolean;
   signature_url: string | null; photo_before_url: string | null; photo_after_url: string | null;
   notes: string | null;
   actual_weather: string | null;
@@ -434,7 +436,14 @@ function TaskCard({ task, onStart, onFinish, onPhoto, onPreview, onAnomaly }: { 
               {task.project_number && <span className="text-[10px] font-bold text-muted-foreground bg-muted px-1 rounded">#{task.project_number}</span>}
               <div className="font-semibold">{task.title}</div>
             </div>
+          <div className="flex items-center gap-2">
             <div className="text-sm text-muted-foreground">{task.client}</div>
+            <WeatherBadge 
+              lat={task.lat} lng={task.lng} 
+              date={parseISO(task.scheduled_at)} 
+              requiresDryWeather={task.requires_dry_weather} 
+            />
+          </div>
           </div>
           <Badge variant={task.status === "termine" ? "secondary" : task.status === "en_cours" ? "default" : "outline"}>
             {task.status === "planifie" ? "planifié" : task.status === "en_cours" ? "en cours" : "terminé"}

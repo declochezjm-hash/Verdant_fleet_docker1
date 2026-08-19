@@ -20,7 +20,7 @@ export default defineConfig({
       strictPort: true,
       watch: {
         usePolling: true,
-        interval: 1000,
+        interval: process.env.DOCKER ? 2000 : 1000,
         ignored: [
           "**/.git/**",
           "**/src/routeTree.gen.ts",

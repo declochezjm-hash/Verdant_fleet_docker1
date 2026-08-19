@@ -1,0 +1,9 @@
+API error from llamacpp (model: devstral): LLM backend error [llamacpp]
+  status: N/A
+  reason: All connection attempts failed
+  request_id: N/A
+  endpoint: http://127.0.0.1:8080/v1/chat/completions
+  model: devstral
+  provider_message: Network error
+  body_excerpt: 
+  payload_summary: {"model":"devstral","message_count":44,"approx_chars":172650,"temperature":0.2,"has_tools":true,"tool_choice":"auto"}

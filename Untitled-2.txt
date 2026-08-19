@@ -1,0 +1,1 @@
+API error from mistral (model: mistral-vibe-cli-latest): Invalid API key. Please check your API key and try again.

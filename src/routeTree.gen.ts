@@ -9,56 +9,21 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as StocksRouteImport } from './routes/stocks'
-import { Route as SettingsRouteImport } from './routes/settings'
-import { Route as PlanningRouteImport } from './routes/planning'
-import { Route as MaterielRouteImport } from './routes/materiel'
-import { Route as CoordinatorRouteImport } from './routes/coordinator'
-import { Route as CarteRouteImport } from './routes/carte'
-import { Route as AuthRouteImport } from './routes/auth'
-import { Route as AnomaliesRouteImport } from './routes/anomalies'
-import { Route as AnalyticsRouteImport } from './routes/analytics'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AnalyticsRouteImport } from './routes/analytics'
+import { Route as AnomaliesRouteImport } from './routes/anomalies'
+import { Route as AuthRouteImport } from './routes/auth'
+import { Route as CarteRouteImport } from './routes/carte'
+import { Route as CoordinatorRouteImport } from './routes/coordinator'
+import { Route as MaterielRouteImport } from './routes/materiel'
+import { Route as PlanningRouteImport } from './routes/planning'
+import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as StocksRouteImport } from './routes/stocks'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 
-const StocksRoute = StocksRouteImport.update({
-  id: '/stocks',
-  path: '/stocks',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SettingsRoute = SettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PlanningRoute = PlanningRouteImport.update({
-  id: '/planning',
-  path: '/planning',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MaterielRoute = MaterielRouteImport.update({
-  id: '/materiel',
-  path: '/materiel',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CoordinatorRoute = CoordinatorRouteImport.update({
-  id: '/coordinator',
-  path: '/coordinator',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CarteRoute = CarteRouteImport.update({
-  id: '/carte',
-  path: '/carte',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthRoute = AuthRouteImport.update({
-  id: '/auth',
-  path: '/auth',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AnomaliesRoute = AnomaliesRouteImport.update({
-  id: '/anomalies',
-  path: '/anomalies',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AnalyticsRoute = AnalyticsRouteImport.update({
@@ -66,9 +31,44 @@ const AnalyticsRoute = AnalyticsRouteImport.update({
   path: '/analytics',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const AnomaliesRoute = AnomaliesRouteImport.update({
+  id: '/anomalies',
+  path: '/anomalies',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CarteRoute = CarteRouteImport.update({
+  id: '/carte',
+  path: '/carte',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CoordinatorRoute = CoordinatorRouteImport.update({
+  id: '/coordinator',
+  path: '/coordinator',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MaterielRoute = MaterielRouteImport.update({
+  id: '/materiel',
+  path: '/materiel',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlanningRoute = PlanningRouteImport.update({
+  id: '/planning',
+  path: '/planning',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StocksRoute = StocksRouteImport.update({
+  id: '/stocks',
+  path: '/stocks',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthCallbackRoute = AuthCallbackRouteImport.update({
@@ -174,60 +174,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/stocks': {
-      id: '/stocks'
-      path: '/stocks'
-      fullPath: '/stocks'
-      preLoaderRoute: typeof StocksRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/settings': {
-      id: '/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof SettingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/planning': {
-      id: '/planning'
-      path: '/planning'
-      fullPath: '/planning'
-      preLoaderRoute: typeof PlanningRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/materiel': {
-      id: '/materiel'
-      path: '/materiel'
-      fullPath: '/materiel'
-      preLoaderRoute: typeof MaterielRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/coordinator': {
-      id: '/coordinator'
-      path: '/coordinator'
-      fullPath: '/coordinator'
-      preLoaderRoute: typeof CoordinatorRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/carte': {
-      id: '/carte'
-      path: '/carte'
-      fullPath: '/carte'
-      preLoaderRoute: typeof CarteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/auth': {
-      id: '/auth'
-      path: '/auth'
-      fullPath: '/auth'
-      preLoaderRoute: typeof AuthRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/anomalies': {
-      id: '/anomalies'
-      path: '/anomalies'
-      fullPath: '/anomalies'
-      preLoaderRoute: typeof AnomaliesRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/analytics': {
@@ -237,11 +188,60 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AnalyticsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/anomalies': {
+      id: '/anomalies'
+      path: '/anomalies'
+      fullPath: '/anomalies'
+      preLoaderRoute: typeof AnomaliesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/carte': {
+      id: '/carte'
+      path: '/carte'
+      fullPath: '/carte'
+      preLoaderRoute: typeof CarteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/coordinator': {
+      id: '/coordinator'
+      path: '/coordinator'
+      fullPath: '/coordinator'
+      preLoaderRoute: typeof CoordinatorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/materiel': {
+      id: '/materiel'
+      path: '/materiel'
+      fullPath: '/materiel'
+      preLoaderRoute: typeof MaterielRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/planning': {
+      id: '/planning'
+      path: '/planning'
+      fullPath: '/planning'
+      preLoaderRoute: typeof PlanningRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/stocks': {
+      id: '/stocks'
+      path: '/stocks'
+      fullPath: '/stocks'
+      preLoaderRoute: typeof StocksRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth/callback': {

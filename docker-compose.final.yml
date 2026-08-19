@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  verdant-app:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    container_name: verdant-fleet-v2-final
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    stdin_open: true
+    tty: true

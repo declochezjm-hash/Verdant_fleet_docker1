@@ -1,0 +1,19 @@
+services:
+  verdant-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: verdant-fleet-v2-prod
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+      - NODE_ENV=development
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # Pas de volumes montés pour éviter les problèmes de hot-reload
+    restart: unless-stopped
+    stdin_open: true
+    tty: true

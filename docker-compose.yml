@@ -1,0 +1,33 @@
+name: verdant_fleet
+
+networks:
+  default:
+    name: verdant_fleet
+  supabase:
+    name: supabase_network_verdant_fleet
+    external: true
+
+services:
+  verdant-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: verdant_fleet
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+      - NODE_ENV=development
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      - supabase
+    volumes:
+      - .:/app
+      - /app/node_modules
+    restart: unless-stopped
+    stdin_open: true
+    tty: true

@@ -5,7 +5,7 @@ import { toast } from "sonner";
 
 export type AppRole = "agent" | "coordinator" | "admin";
 
-interface Profile { id: string; name: string; team: string; is_blocked?: boolean }
+interface Profile { id: string; name: string; team: string | null; is_blocked?: boolean | null }
 interface AuthCtx {
   session: Session | null;
   user: User | null;

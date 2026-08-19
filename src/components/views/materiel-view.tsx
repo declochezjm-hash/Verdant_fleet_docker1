@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { buildEquipmentPageContext, useVerduraPageContextSetter } from "@/lib/verdura-page-context";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -50,6 +51,7 @@ interface MaintenanceLog {
 
 export function MaterielView() {
   const [selected, setSelected] = useState<Equipment | null>(null);
+  const { setPageContext } = useVerduraPageContextSetter();
   const [logOpen, setLogOpen] = useState(false);
   const [maintenance, setMaintenance] = useState<MaintenanceLog[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -165,6 +167,15 @@ export function MaterielView() {
         .reduce((sum, h) => sum + h.duration, 0)
     }));
   }, [selected, usageHistory]);
+
+  useEffect(() => {
+    if (!selected) {
+      setPageContext(null);
+      return;
+    }
+    setPageContext(buildEquipmentPageContext(selected));
+    return () => setPageContext(null);
+  }, [selected, setPageContext]);
 
   const isFiltered = searchTerm !== "" || filterType !== "all" || showIssuesOnly;
 

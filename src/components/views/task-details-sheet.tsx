@@ -1,5 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { buildTaskPageContext, useVerduraPageContextSetter } from "@/lib/verdura-page-context";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -25,6 +27,7 @@ interface Props {
 
 export function TaskDetailsSheet({ taskId, onOpenChange }: Props) {
   const open = !!taskId;
+  const { setPageContext } = useVerduraPageContextSetter();
 
   const qc = useQueryClient();
   const statusMut = useMutation({
@@ -73,6 +76,18 @@ export function TaskDetailsSheet({ taskId, onOpenChange }: Props) {
       };
     },
   });
+
+  useEffect(() => {
+    if (!open) {
+      setPageContext(null);
+      return;
+    }
+    const task = q.data?.task;
+    if (task) {
+      setPageContext(buildTaskPageContext(task));
+    }
+    return () => setPageContext(null);
+  }, [open, q.data?.task, setPageContext]);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>

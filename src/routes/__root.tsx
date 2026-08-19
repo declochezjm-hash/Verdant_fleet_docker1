@@ -11,7 +11,10 @@ import {
 import { Sidebar } from "@/components/views/sidebar";
 import { RoleSwitcher } from "@/components/role-switcher";
 import { Toaster } from "@/components/ui/sonner";
-import { AuthProvider } from "@/lib/auth-context";
+import { AuthProvider, useAuth } from "@/lib/auth-context";
+import { VerduraPageContextProvider } from "@/lib/verdura-page-context";
+import { VerduraChatProvider } from "@/hooks/useVerduraChat";
+import { VerduraFloatingButton } from "@/components/chat/VerduraFloatingButton";
 import { Menu, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -117,6 +120,12 @@ function RootShell({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function AuthenticatedVerduraChat() {
+  const { user, loading } = useAuth();
+  if (loading || !user) return null;
+  return <VerduraFloatingButton />;
+}
+
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
@@ -130,43 +139,48 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <div className="flex min-h-screen w-full bg-background">
-          {/* Desktop Sidebar */}
-          <div className="hidden md:flex">
-            <Sidebar />
-          </div>
+        <VerduraPageContextProvider>
+          <VerduraChatProvider>
+            <div className="flex min-h-screen w-full bg-background">
+              {/* Desktop Sidebar */}
+              <div className="hidden md:flex">
+                <Sidebar />
+              </div>
 
-          {/* Mobile Sidebar Overlay */}
-          {isMobileMenuOpen && (
-            <div className="fixed inset-0 z-50 flex md:hidden">
-              <div className="fixed inset-0 bg-background/80 backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)} />
-              <div className="relative flex w-64 flex-col">
-                {mounted && <Sidebar />}
-                <Button variant="ghost" size="icon" className="absolute right-2 top-2" onClick={() => setIsMobileMenuOpen(false)}>
-                  <X className="h-4 w-4" />
-                </Button>
+              {/* Mobile Sidebar Overlay */}
+              {isMobileMenuOpen && (
+                <div className="fixed inset-0 z-50 flex md:hidden">
+                  <div className="fixed inset-0 bg-background/80 backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)} />
+                  <div className="relative flex w-64 flex-col">
+                    {mounted && <Sidebar />}
+                    <Button variant="ghost" size="icon" className="absolute right-2 top-2" onClick={() => setIsMobileMenuOpen(false)}>
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex flex-1 flex-col">
+                <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b bg-card/80 px-4 backdrop-blur sm:px-6">
+                  <div className="flex items-center gap-2">
+                    <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setIsMobileMenuOpen(true)}>
+                      <Menu className="h-5 w-5" />
+                    </Button>
+                    <h1 className="text-sm font-semibold sm:text-base text-primary uppercase tracking-wider">Verdura</h1>
+                  </div>
+                  <RoleSwitcher />
+                </header>
+                <main className="flex-1 overflow-x-hidden">
+                  <React.Suspense fallback={<div className="flex h-full items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>}>
+                    <Outlet />
+                  </React.Suspense>
+                </main>
               </div>
             </div>
-          )}
-
-          <div className="flex flex-1 flex-col">
-            <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b bg-card/80 px-4 backdrop-blur sm:px-6">
-              <div className="flex items-center gap-2">
-                <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setIsMobileMenuOpen(true)}>
-                  <Menu className="h-5 w-5" />
-                </Button>
-                <h1 className="text-sm font-semibold sm:text-base text-primary uppercase tracking-wider">Verdura</h1>
-              </div>
-              <RoleSwitcher />
-            </header>
-            <main className="flex-1 overflow-x-hidden">
-              <React.Suspense fallback={<div className="flex h-full items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>}>
-                <Outlet />
-              </React.Suspense>
-            </main>
-          </div>
-        </div>
-        <Toaster />
+            <Toaster />
+            <AuthenticatedVerduraChat />
+          </VerduraChatProvider>
+        </VerduraPageContextProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

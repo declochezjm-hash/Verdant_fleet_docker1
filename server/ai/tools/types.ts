@@ -1,0 +1,7 @@
+export type ApiTaskStatus = "pending" | "in_progress" | "completed" | "cancelled";
+export type ApiPriority = "normal" | "high" | "urgent";
+export type ApiPeriod = "week" | "month" | "day";
+export type ApiEquipmentStatus = "available" | "maintenance" | "broken";
+export type ApiAnomalySeverity = "low" | "medium" | "critical";
+export type ApiAnomalyStatus = "open" | "resolved";
+export type ProfileRole = "admin" | "coordinator" | "agent" | "elu-partenaire";

@@ -1,6 +1,7 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { buildProductPageContext, useVerduraPageContextSetter } from "@/lib/verdura-page-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -29,6 +30,7 @@ interface Product {
 
 export function StocksView() {
   const queryClient = useQueryClient();
+  const { setPageContext } = useVerduraPageContextSetter();
   const [q, setQ] = useState("");
   const [cat, setCat] = useState("all");
   const [adjustingId, setAdjustingId] = useState<string | null>(null);
@@ -152,6 +154,17 @@ export function StocksView() {
     },
     onError: (err: Error) => toast.error(err.message)
   });
+
+  useEffect(() => {
+    if (isProductDialogOpen && editingProduct?.id) {
+      setPageContext(buildProductPageContext(editingProduct as Product));
+      return () => setPageContext(null);
+    }
+    if (!isProductDialogOpen) {
+      setPageContext(null);
+    }
+    return undefined;
+  }, [isProductDialogOpen, editingProduct, setPageContext]);
 
   // --- Composant Formulaire Commande interne ---
   const [isOrderDialogOpen, setIsOrderDialogOpen] = useState(false);

@@ -8,6 +8,7 @@ import { buildVerduraSystemPrompt } from "../../ai/verduraTemplate";
 
 export interface VerduraChatRequestBody {
   messages: Array<{ role: "user" | "assistant" | "system"; content: string }>;
+  sessionId?: string;
   userRole?: string;
   currentPath?: string;
   currentEntity?: Record<string, string | undefined>;
@@ -110,6 +111,7 @@ export async function handleVerduraChatRequest(request: Request): Promise<Respon
       role: "user",
       content: lastUserMessage.content,
       metadata: {
+        sessionId: body.sessionId,
         currentPath: body.currentPath,
         currentEntity: body.currentEntity,
         userRole: body.userRole,
@@ -157,6 +159,7 @@ export async function handleVerduraChatRequest(request: Request): Promise<Respon
       role: "assistant",
       content: assistantContent,
       metadata: {
+        sessionId: body.sessionId,
         model,
         toolsUsed: toolsUsed.map((t) => ({
           name: t.name,

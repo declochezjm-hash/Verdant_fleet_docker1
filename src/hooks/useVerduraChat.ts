@@ -17,6 +17,7 @@ export interface VerduraChatMessage {
   content: string;
   createdAt: string;
   metadata?: {
+    sessionId?: string;
     tool?: string;
     toolBadge?: string;
     context?: Record<string, unknown>;
@@ -60,7 +61,7 @@ export interface UseVerduraChatReturn {
   isFullScreen: boolean;
   isSidebarOpen: boolean;
   recentSessions: VerduraChatSession[];
-  activeSessionId: string | null;
+  currentSessionId: string;
   context: VerduraChatContext;
   contextLabel: string;
   historySynced: boolean;
@@ -82,6 +83,13 @@ const PROFILE_GUIDE_PROMPT =
   "Affiche-moi le guide complet et la fiche métier pour mon rôle Verdura.";
 
 const VerduraChatContextReact = React.createContext<UseVerduraChatReturn | null>(null);
+
+function createSessionId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `session_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+}
 
 function mapPathToPageKind(pathname: string): VerduraPageKind {
   const path = pathname.replace(/\/$/, "") || "/";
@@ -229,7 +237,7 @@ function useVerduraChatInternal(): UseVerduraChatReturn {
   const [isFullScreen, setIsFullScreen] = React.useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
   const [recentSessions, setRecentSessions] = React.useState<VerduraChatSession[]>([]);
-  const [activeSessionId, setActiveSessionId] = React.useState<string | null>(null);
+  const [currentSessionId, setCurrentSessionId] = React.useState(createSessionId);
   const [historySynced, setHistorySynced] = React.useState(true);
 
   const toggleFullScreen = React.useCallback(() => {
@@ -245,8 +253,8 @@ function useVerduraChatInternal(): UseVerduraChatReturn {
   }, []);
 
   const startNewChat = React.useCallback(() => {
+    setCurrentSessionId(createSessionId());
     setMessages([]);
-    setActiveSessionId(null);
     setError(null);
   }, []);
 
@@ -276,8 +284,8 @@ function useVerduraChatInternal(): UseVerduraChatReturn {
     (sessionId: string) => {
       const session = recentSessions.find((s) => s.id === sessionId);
       if (!session) return;
+      setCurrentSessionId(session.id);
       setMessages(session.messages);
-      setActiveSessionId(session.id);
       setError(null);
     },
     [recentSessions],
@@ -305,11 +313,11 @@ function useVerduraChatInternal(): UseVerduraChatReturn {
       }
 
       const sessions = await loadRecentSessions();
-      if (activeSessionId === sessionId) {
+      if (currentSessionId === sessionId) {
         const next = sessions[0];
         if (next) {
+          setCurrentSessionId(next.id);
           setMessages(next.messages);
-          setActiveSessionId(next.id);
         } else {
           startNewChat();
         }
@@ -317,26 +325,17 @@ function useVerduraChatInternal(): UseVerduraChatReturn {
 
       setIsLoading(false);
     },
-    [auth.user?.id, recentSessions, activeSessionId, loadRecentSessions, startNewChat],
+    [auth.user?.id, recentSessions, currentSessionId, loadRecentSessions, startNewChat],
   );
 
   const deleteCurrentChat = React.useCallback(async () => {
     if (!auth.user?.id) return;
 
-    let messageIds: string[] = [];
-    let sessionId: string | null = activeSessionId;
-
-    if (activeSessionId) {
-      const session = recentSessions.find((s) => s.id === activeSessionId);
-      if (session?.messageIds.length) messageIds = session.messageIds;
-    }
+    const session = recentSessions.find((s) => s.id === currentSessionId);
+    let messageIds = session?.messageIds ?? [];
 
     if (messageIds.length === 0 && messages.length > 0) {
       messageIds = messages.map((m) => m.id);
-      if (!sessionId) {
-        sessionId =
-          recentSessions.find((s) => s.messageIds.some((id) => messageIds.includes(id)))?.id ?? null;
-      }
     }
 
     if (messageIds.length === 0) {
@@ -358,17 +357,13 @@ function useVerduraChatInternal(): UseVerduraChatReturn {
       return;
     }
 
-    setRecentSessions((prev) =>
-      prev.filter(
-        (s) => s.id !== sessionId && !s.messageIds.some((id) => messageIds.includes(id)),
-      ),
-    );
+    setRecentSessions((prev) => prev.filter((s) => s.id !== currentSessionId));
     await loadRecentSessions();
     startNewChat();
     setIsLoading(false);
   }, [
     auth.user?.id,
-    activeSessionId,
+    currentSessionId,
     recentSessions,
     messages,
     startNewChat,
@@ -382,11 +377,9 @@ function useVerduraChatInternal(): UseVerduraChatReturn {
 
   const reloadHistory = React.useCallback(async () => {
     const sessions = await loadRecentSessions();
-    if (activeSessionId) {
-      const session = sessions.find((s) => s.id === activeSessionId);
-      if (session) setMessages(session.messages);
-    }
-  }, [loadRecentSessions, activeSessionId]);
+    const session = sessions.find((s) => s.id === currentSessionId);
+    if (session) setMessages(session.messages);
+  }, [loadRecentSessions, currentSessionId]);
 
   React.useEffect(() => {
     if (isDrawerOpen && auth.user) {
@@ -418,16 +411,38 @@ function useVerduraChatInternal(): UseVerduraChatReturn {
       setIsLoading(true);
       setIsStreaming(true);
 
+      const isFirstMessage = messages.length === 0;
+      const sessionId = currentSessionId;
+
       const userMessage: VerduraChatMessage = {
         id: crypto.randomUUID(),
         role: "user",
         content: trimmed,
         createdAt: new Date().toISOString(),
-        metadata: { context: toApiEntity(context, pageCtx) as Record<string, unknown> },
+        metadata: {
+          sessionId,
+          context: toApiEntity(context, pageCtx) as Record<string, unknown>,
+        },
       };
 
       const nextMessages = [...messages, userMessage];
       setMessages(nextMessages);
+
+      if (isFirstMessage) {
+        const title = trimmed.length > 48 ? `${trimmed.slice(0, 48)}…` : trimmed;
+        const preview = trimmed.length > 72 ? `${trimmed.slice(0, 72)}…` : trimmed;
+        setRecentSessions((prev) => [
+          {
+            id: sessionId,
+            title,
+            preview,
+            updatedAt: userMessage.createdAt,
+            messageIds: [userMessage.id],
+            messages: [userMessage],
+          },
+          ...prev.filter((s) => s.id !== sessionId),
+        ]);
+      }
 
       try {
         const response = await fetch("/api/chat/verdura", {
@@ -438,6 +453,7 @@ function useVerduraChatInternal(): UseVerduraChatReturn {
           },
           body: JSON.stringify({
             messages: nextMessages.map((m) => ({ role: m.role, content: m.content })),
+            sessionId,
             userRole: auth.primaryRole ?? undefined,
             currentPath: context.pathname,
             currentEntity: toApiEntity(context, pageCtx),
@@ -472,6 +488,7 @@ function useVerduraChatInternal(): UseVerduraChatReturn {
           content: payload.message ?? "",
           createdAt: new Date().toISOString(),
           metadata: {
+            sessionId,
             tool: payload.toolsUsed?.[0]?.name,
             toolBadge,
             context: toApiEntity(context, pageCtx) as Record<string, unknown>,
@@ -479,9 +496,7 @@ function useVerduraChatInternal(): UseVerduraChatReturn {
         };
 
         setMessages((prev) => [...prev, assistantMessage]);
-        const sessions = await loadRecentSessions();
-        const latest = sessions[0];
-        if (latest) setActiveSessionId(latest.id);
+        await loadRecentSessions();
       } catch (err) {
         const message = err instanceof Error ? err.message : "Erreur réseau.";
         setError(message);
@@ -490,7 +505,7 @@ function useVerduraChatInternal(): UseVerduraChatReturn {
         setIsStreaming(false);
       }
     },
-    [auth.session, auth.user, auth.primaryRole, context, isLoading, messages, loadRecentSessions, pageCtx],
+    [auth.session, auth.user, auth.primaryRole, context, currentSessionId, isLoading, messages, loadRecentSessions, pageCtx],
   );
 
   const sendProfileGuideRequest = React.useCallback(async () => {
@@ -525,7 +540,7 @@ function useVerduraChatInternal(): UseVerduraChatReturn {
 
     setMessages([]);
     setRecentSessions([]);
-    setActiveSessionId(null);
+    setCurrentSessionId(createSessionId());
     setIsLoading(false);
     setHistorySynced(true);
   }, [auth.user?.id]);
@@ -544,7 +559,7 @@ function useVerduraChatInternal(): UseVerduraChatReturn {
     isFullScreen,
     isSidebarOpen,
     recentSessions,
-    activeSessionId,
+    currentSessionId,
     context,
     contextLabel: context.contextLabel,
     historySynced,

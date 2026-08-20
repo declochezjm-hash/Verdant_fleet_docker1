@@ -400,9 +400,7 @@ function SessionSidebar({
             <p className="px-2 py-4 text-xs text-slate-500">Aucune conversation récente.</p>
           )}
           {chat.recentSessions.map((session) => {
-            const isActive =
-              chat.activeSessionId === session.id ||
-              (!chat.activeSessionId && chat.messages.length > 0 && session.id === chat.recentSessions[0]?.id);
+            const isActive = chat.currentSessionId === session.id;
             return (
               <div
                 key={session.id}

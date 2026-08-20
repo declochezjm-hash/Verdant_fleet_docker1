@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { LogOut, LogIn } from "lucide-react";
 import { Link } from "@tanstack/react-router";
+import { VerduraChatButton } from "@/components/chat/VerduraFloatingButton";
 
 export function RoleSwitcher() {
   const { session, profile, primaryRole, signOut } = useAuth();
@@ -19,7 +20,8 @@ export function RoleSwitcher() {
   }
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex items-center gap-2 sm:gap-3">
+      <VerduraChatButton />
       <div className="hidden text-right sm:block">
         <div className="text-sm font-medium leading-tight">{profile?.name ?? session.user.email}</div>
         <div className="text-xs text-muted-foreground">{profile?.team}</div>

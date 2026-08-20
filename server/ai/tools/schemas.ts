@@ -1,6 +1,13 @@
-import type { ChatCompletionTool } from "openai/resources/chat/completions";
+export interface VerduraToolDefinition {
+  type: "function";
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+}
 
-export const VERDURA_AI_TOOL_DEFINITIONS: ChatCompletionTool[] = [
+export const VERDURA_AI_TOOL_DEFINITIONS: VerduraToolDefinition[] = [
   {
     type: "function",
     function: {
@@ -30,6 +37,11 @@ export const VERDURA_AI_TOOL_DEFINITIONS: ChatCompletionTool[] = [
             type: "string",
             enum: ["day", "week", "month"],
             description: "Fenêtre temporelle basée sur tasks.scheduled_at.",
+          },
+          onlyOverdue: {
+            type: "boolean",
+            description:
+              "Si true, ne retourne que les chantiers en retard (planifiés ou en cours dont la date prévue est dépassée).",
           },
         },
         additionalProperties: false,
@@ -133,15 +145,23 @@ export const VERDURA_AI_TOOL_DEFINITIONS: ChatCompletionTool[] = [
     function: {
       name: "getProfileGuide",
       description:
-        "Charge la fiche métier Verdura (Markdown) correspondant au rôle demandé. Restitution intégrale pour les guides.",
+        "Charge une fiche métier ou un référentiel officiel Verdura (Markdown). Profils : admin, coordinator, agent, elu-partenaire. Référentiels : espaces-verts, materiel-vehicules. Restitution intégrale pour les guides et bibles.",
       parameters: {
         type: "object",
         required: ["role"],
         properties: {
           role: {
             type: "string",
-            enum: ["admin", "coordinator", "agent", "elu-partenaire"],
-            description: "Profil métier Verdura. elu-partenaire = rôle partner virtuel.",
+            enum: [
+              "admin",
+              "coordinator",
+              "agent",
+              "elu-partenaire",
+              "espaces-verts",
+              "materiel-vehicules",
+            ],
+            description:
+              "Guide à charger : fiche métier (admin/coordinator/agent/elu-partenaire) ou référentiel (espaces-verts, materiel-vehicules).",
           },
         },
         additionalProperties: false,

@@ -30,12 +30,14 @@ export default defineConfig({
       },
       hmr: {
         protocol: 'ws',
-        port: 3000,
+        host: 'localhost',
+        clientPort: 3000,
       },
     },
     optimizeDeps: {
       // Force l'inclusion de mapbox-gl pour éviter les erreurs de type MIME dans Docker
       include: ['recharts', 'lucide-react', 'date-fns', 'mapbox-gl'],
+      exclude: ['@cursor/sdk'],
       entries: ['./src/entry-client.tsx'],
     },
     resolve: {
@@ -44,6 +46,7 @@ export default defineConfig({
       },
     },
     ssr: {
+      external: ['@cursor/sdk'],
       noExternal: [
         '@tanstack/react-start', 
         '@tanstack/react-router', 

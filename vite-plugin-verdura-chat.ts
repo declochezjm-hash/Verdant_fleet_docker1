@@ -1,5 +1,5 @@
 import type { Plugin } from "vite";
-import { handleVerduraChatRequest } from "./server/api/chat/verdura";
+import { loadEnv } from "vite";
 
 async function nodeRequestToFetch(req: import("http").IncomingMessage): Promise<Request> {
   const host = req.headers.host ?? "localhost";
@@ -47,6 +47,12 @@ export function verduraChatApiPlugin(): Plugin {
   return {
     name: "verdura-chat-api",
     configureServer(server) {
+      const env = loadEnv(server.config.mode, server.config.root, "");
+      for (const [key, value] of Object.entries(env)) {
+        if (process.env[key] === undefined) {
+          process.env[key] = value;
+        }
+      }
       server.middlewares.use(async (req, res, next) => {
         const pathname = req.url?.split("?")[0];
         if (pathname !== "/api/chat/verdura") {
@@ -70,6 +76,7 @@ export function verduraChatApiPlugin(): Plugin {
         }
 
         try {
+          const { handleVerduraChatRequest } = await import("./server/api/chat/verdura");
           const request = await nodeRequestToFetch(req);
           const response = await handleVerduraChatRequest(request);
           await sendFetchResponse(res, response);

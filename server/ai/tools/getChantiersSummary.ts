@@ -17,6 +17,12 @@ export const getChantiersSummarySchema = z.object({
   priority: z.enum(["normal", "high", "urgent"]).optional(),
   teamName: z.string().optional(),
   period: z.enum(["day", "week", "month"]).optional(),
+  onlyOverdue: z
+    .boolean()
+    .optional()
+    .describe(
+      "Si true, ne retourne que les chantiers en retard (planifie/en_cours dont scheduled_at est dépassé).",
+    ),
 });
 
 export type GetChantiersSummaryInput = z.infer<typeof getChantiersSummarySchema>;
@@ -59,6 +65,10 @@ function applyTaskFilters(
   const { start, end } = getPeriodBounds(input.period as ApiPeriod | undefined);
   if (start) q = q.gte("scheduled_at", start);
   if (end) q = q.lt("scheduled_at", end);
+  if (input.onlyOverdue) {
+    const now = new Date().toISOString();
+    q = q.in("status", ["planifie", "en_cours"]).lt("scheduled_at", now);
+  }
   if (scope.clientNames?.length) q = q.in("client", scope.clientNames);
   return q;
 }
@@ -154,6 +164,10 @@ export async function getChantiersSummary(
     });
   }
 
+  const filteredItems = input.onlyOverdue
+    ? items.filter((item) => item.delayDays !== null && item.delayDays > 0)
+    : items;
+
   const totalNum = total ?? 0;
   const completedNum = completedCount ?? 0;
 
@@ -164,6 +178,6 @@ export async function getChantiersSummary(
     completionRatePct: totalNum > 0 ? Math.round((completedNum / totalNum) * 1000) / 10 : 0,
     overdueCount: overdueCount ?? 0,
     filters: input,
-    items,
+    items: filteredItems,
   };
 }

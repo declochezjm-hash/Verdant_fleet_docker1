@@ -4,6 +4,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { useOptionalVerduraPageContext } from "@/lib/verdura-page-context";
 import { buildConversationMarkdown, downloadMarkdownFile } from "@/lib/verdura-chat-export";
+import {
+  groupMessagesIntoSessions,
+  type VerduraChatSession,
+} from "@/lib/verdura-chat-sessions";
 
 export type VerduraMessageRole = "user" | "assistant" | "system";
 
@@ -53,10 +57,20 @@ export interface UseVerduraChatReturn {
   isStreaming: boolean;
   error: string | null;
   isDrawerOpen: boolean;
+  isFullScreen: boolean;
+  isSidebarOpen: boolean;
+  recentSessions: VerduraChatSession[];
+  activeSessionId: string | null;
   context: VerduraChatContext;
   contextLabel: string;
   historySynced: boolean;
   setDrawerOpen: (open: boolean) => void;
+  toggleFullScreen: () => void;
+  toggleSidebar: () => void;
+  startNewChat: () => void;
+  selectSession: (sessionId: string) => void;
+  deleteSession: (sessionId: string) => Promise<void>;
+  deleteCurrentChat: () => Promise<void>;
   sendMessage: (content: string) => Promise<void>;
   sendProfileGuideRequest: () => Promise<void>;
   exportMarkdown: () => void;
@@ -212,7 +226,154 @@ function useVerduraChatInternal(): UseVerduraChatReturn {
   const [isStreaming, setIsStreaming] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [isDrawerOpen, setDrawerOpen] = React.useState(false);
+  const [isFullScreen, setIsFullScreen] = React.useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
+  const [recentSessions, setRecentSessions] = React.useState<VerduraChatSession[]>([]);
+  const [activeSessionId, setActiveSessionId] = React.useState<string | null>(null);
   const [historySynced, setHistorySynced] = React.useState(true);
+
+  const toggleFullScreen = React.useCallback(() => {
+    setIsFullScreen((prev) => {
+      const next = !prev;
+      if (next) setIsSidebarOpen(true);
+      return next;
+    });
+  }, []);
+
+  const toggleSidebar = React.useCallback(() => {
+    setIsSidebarOpen((prev) => !prev);
+  }, []);
+
+  const startNewChat = React.useCallback(() => {
+    setMessages([]);
+    setActiveSessionId(null);
+    setError(null);
+  }, []);
+
+  const loadRecentSessions = React.useCallback(async () => {
+    if (!auth.user?.id) return [];
+
+    const { data, error: dbError } = await supabase
+      .from("jarvis_messages")
+      .select("id, role, content, metadata, created_at")
+      .eq("user_id", auth.user.id)
+      .order("created_at", { ascending: true })
+      .limit(200);
+
+    if (dbError) {
+      setHistorySynced(false);
+      return [];
+    }
+
+    setHistorySynced(true);
+    const mapped = (data ?? []).map(mapDbMessage);
+    const sessions = groupMessagesIntoSessions(mapped);
+    setRecentSessions(sessions);
+    return sessions;
+  }, [auth.user?.id]);
+
+  const selectSession = React.useCallback(
+    (sessionId: string) => {
+      const session = recentSessions.find((s) => s.id === sessionId);
+      if (!session) return;
+      setMessages(session.messages);
+      setActiveSessionId(session.id);
+      setError(null);
+    },
+    [recentSessions],
+  );
+
+  const deleteSession = React.useCallback(
+    async (sessionId: string) => {
+      if (!auth.user?.id) return;
+
+      const session = recentSessions.find((s) => s.id === sessionId);
+      if (!session?.messageIds.length) return;
+
+      setIsLoading(true);
+      setError(null);
+
+      const { error: dbError } = await supabase
+        .from("jarvis_messages")
+        .delete()
+        .in("id", session.messageIds);
+
+      if (dbError) {
+        setError("Impossible de supprimer cette conversation.");
+        setIsLoading(false);
+        return;
+      }
+
+      const sessions = await loadRecentSessions();
+      if (activeSessionId === sessionId) {
+        const next = sessions[0];
+        if (next) {
+          setMessages(next.messages);
+          setActiveSessionId(next.id);
+        } else {
+          startNewChat();
+        }
+      }
+
+      setIsLoading(false);
+    },
+    [auth.user?.id, recentSessions, activeSessionId, loadRecentSessions, startNewChat],
+  );
+
+  const deleteCurrentChat = React.useCallback(async () => {
+    if (!auth.user?.id) return;
+
+    let messageIds: string[] = [];
+    let sessionId: string | null = activeSessionId;
+
+    if (activeSessionId) {
+      const session = recentSessions.find((s) => s.id === activeSessionId);
+      if (session?.messageIds.length) messageIds = session.messageIds;
+    }
+
+    if (messageIds.length === 0 && messages.length > 0) {
+      messageIds = messages.map((m) => m.id);
+      if (!sessionId) {
+        sessionId =
+          recentSessions.find((s) => s.messageIds.some((id) => messageIds.includes(id)))?.id ?? null;
+      }
+    }
+
+    if (messageIds.length === 0) {
+      startNewChat();
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    const { error: dbError } = await supabase
+      .from("jarvis_messages")
+      .delete()
+      .in("id", messageIds);
+
+    if (dbError) {
+      setError("Impossible de supprimer cette conversation.");
+      setIsLoading(false);
+      return;
+    }
+
+    setRecentSessions((prev) =>
+      prev.filter(
+        (s) => s.id !== sessionId && !s.messageIds.some((id) => messageIds.includes(id)),
+      ),
+    );
+    await loadRecentSessions();
+    startNewChat();
+    setIsLoading(false);
+  }, [
+    auth.user?.id,
+    activeSessionId,
+    recentSessions,
+    messages,
+    startNewChat,
+    loadRecentSessions,
+  ]);
 
   const context = React.useMemo(
     () => resolvePageContext(location.pathname, location.searchStr, pageCtx, auth),
@@ -220,29 +381,28 @@ function useVerduraChatInternal(): UseVerduraChatReturn {
   );
 
   const reloadHistory = React.useCallback(async () => {
-    if (!auth.user?.id) return;
-
-    const { data, error: dbError } = await supabase
-      .from("jarvis_messages")
-      .select("id, role, content, metadata, created_at")
-      .eq("user_id", auth.user.id)
-      .order("created_at", { ascending: true })
-      .limit(50);
-
-    if (dbError) {
-      setHistorySynced(false);
-      return;
+    const sessions = await loadRecentSessions();
+    if (activeSessionId) {
+      const session = sessions.find((s) => s.id === activeSessionId);
+      if (session) setMessages(session.messages);
     }
-
-    setHistorySynced(true);
-    setMessages((data ?? []).map(mapDbMessage));
-  }, [auth.user?.id]);
+  }, [loadRecentSessions, activeSessionId]);
 
   React.useEffect(() => {
     if (isDrawerOpen && auth.user) {
+      void loadRecentSessions();
       void reloadHistory();
     }
-  }, [isDrawerOpen, auth.user, reloadHistory]);
+  }, [isDrawerOpen, auth.user, loadRecentSessions, reloadHistory]);
+
+  React.useEffect(() => {
+    if (!isFullScreen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [isFullScreen]);
 
   const sendMessage = React.useCallback(
     async (content: string) => {
@@ -319,7 +479,9 @@ function useVerduraChatInternal(): UseVerduraChatReturn {
         };
 
         setMessages((prev) => [...prev, assistantMessage]);
-        void reloadHistory();
+        const sessions = await loadRecentSessions();
+        const latest = sessions[0];
+        if (latest) setActiveSessionId(latest.id);
       } catch (err) {
         const message = err instanceof Error ? err.message : "Erreur réseau.";
         setError(message);
@@ -328,7 +490,7 @@ function useVerduraChatInternal(): UseVerduraChatReturn {
         setIsStreaming(false);
       }
     },
-    [auth.session, auth.user, auth.primaryRole, context, isLoading, messages, reloadHistory],
+    [auth.session, auth.user, auth.primaryRole, context, isLoading, messages, loadRecentSessions, pageCtx],
   );
 
   const sendProfileGuideRequest = React.useCallback(async () => {
@@ -362,9 +524,16 @@ function useVerduraChatInternal(): UseVerduraChatReturn {
     }
 
     setMessages([]);
+    setRecentSessions([]);
+    setActiveSessionId(null);
     setIsLoading(false);
     setHistorySynced(true);
   }, [auth.user?.id]);
+
+  const handleSetDrawerOpen = React.useCallback((open: boolean) => {
+    setDrawerOpen(open);
+    if (!open) setIsFullScreen(false);
+  }, []);
 
   return {
     messages,
@@ -372,10 +541,20 @@ function useVerduraChatInternal(): UseVerduraChatReturn {
     isStreaming,
     error,
     isDrawerOpen,
+    isFullScreen,
+    isSidebarOpen,
+    recentSessions,
+    activeSessionId,
     context,
     contextLabel: context.contextLabel,
     historySynced,
-    setDrawerOpen,
+    setDrawerOpen: handleSetDrawerOpen,
+    toggleFullScreen,
+    toggleSidebar,
+    startNewChat,
+    selectSession,
+    deleteSession,
+    deleteCurrentChat,
     sendMessage,
     sendProfileGuideRequest,
     exportMarkdown,

@@ -5,3 +5,5 @@ export type ApiEquipmentStatus = "available" | "maintenance" | "broken";
 export type ApiAnomalySeverity = "low" | "medium" | "critical";
 export type ApiAnomalyStatus = "open" | "resolved";
 export type ProfileRole = "admin" | "coordinator" | "agent" | "elu-partenaire";
+export type ReferentialGuide = "espaces-verts" | "materiel-vehicules";
+export type GuideKey = ProfileRole | ReferentialGuide;

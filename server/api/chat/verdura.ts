@@ -1,15 +1,10 @@
-import OpenAI from "openai";
-import type {
-  ChatCompletionMessageParam,
-  ChatCompletionToolMessageParam,
-} from "openai/resources/chat/completions";
 import { insertJarvisMessage } from "../../db/auditClient";
 import { AiToolError } from "../../db/errors";
 import { buildSessionContext, extractBearerToken } from "../../ai/session";
-import { dispatchTool, getToolsForRole, type ToolCallRecord } from "../../ai/tools";
+import { type ToolCallRecord } from "../../ai/tools";
+import { buildVerduraCursorTools } from "../../ai/cursorTools";
+import { getCursorApiKey, getCursorModel } from "../../ai/cursorConfig";
 import { buildVerduraSystemPrompt } from "../../ai/verduraTemplate";
-
-const MAX_TOOL_ITERATIONS = 5;
 
 export interface VerduraChatRequestBody {
   messages: Array<{ role: "user" | "assistant" | "system"; content: string }>;
@@ -24,18 +19,6 @@ export interface VerduraChatResponseBody {
   model: string;
 }
 
-function getOpenAIClient(): OpenAI {
-  const apiKey = process.env.OPENAI_API_KEY?.trim();
-  if (!apiKey) {
-    throw new AiToolError(
-      "OPENAI_CONFIG",
-      "OPENAI_API_KEY manquante côté serveur.",
-      500,
-    );
-  }
-  return new OpenAI({ apiKey });
-}
-
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -43,15 +26,61 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+function extractErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object" && "message" in error) {
+    return String(error.message);
+  }
+  return "Erreur inconnue.";
+}
+
+function isCursorSdkError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  if ("name" in error) {
+    const name = String(error.name);
+    if (name === "CursorAgentError" || name === "ConfigurationError") return true;
+  }
+  if ("operation" in error && typeof error.operation === "string") return true;
+  const message = extractErrorMessage(error);
+  return message.includes("ERR_DLOPEN_FAILED") || message.includes("tree-sitter");
+}
+
 function errorResponse(error: unknown): Response {
   if (error instanceof AiToolError) {
     return jsonResponse(error.toJSON(), error.httpStatus);
+  }
+  if (isCursorSdkError(error)) {
+    const raw = extractErrorMessage(error);
+    const message = raw.includes("ERR_DLOPEN_FAILED")
+      ? "L'agent Cursor local ne peut pas s'exécuter dans cet environnement (binaires natifs). Relancez avec l'image Docker Debian ou utilisez npm run dev sur Windows."
+      : raw || "Erreur agent Cursor.";
+    console.error("[Verdura Chat] Cursor:", error);
+    return jsonResponse(
+      {
+        code: "CURSOR_ERROR",
+        message,
+        httpStatus: 502,
+      },
+      502,
+    );
   }
   console.error("[Verdura Chat]", error);
   return jsonResponse(
     { code: "INTERNAL_ERROR", message: "Erreur interne du serveur.", httpStatus: 500 },
     500,
   );
+}
+
+function buildCursorPrompt(
+  systemPrompt: string,
+  messages: VerduraChatRequestBody["messages"],
+): string {
+  const history = messages
+    .filter((m) => m.role === "user" || m.role === "assistant")
+    .map((m) => `${m.role === "user" ? "Utilisateur" : "Assistant"}: ${m.content}`)
+    .join("\n\n");
+
+  return `${systemPrompt}\n\n---\n\n${history}`;
 }
 
 export async function handleVerduraChatRequest(request: Request): Promise<Response> {
@@ -87,70 +116,42 @@ export async function handleVerduraChatRequest(request: Request): Promise<Respon
       },
     });
 
+    const apiKey = getCursorApiKey();
+    const model = getCursorModel();
+    const toolsUsed: ToolCallRecord[] = [];
+    const customTools = buildVerduraCursorTools(ctx, toolsUsed);
+    const toolNames = Object.keys(customTools);
     const systemPrompt = await buildVerduraSystemPrompt(ctx, {
       currentPath: body.currentPath,
       currentEntity: body.currentEntity,
+      availableTools: toolNames,
+    });
+    const prompt = buildCursorPrompt(systemPrompt, body.messages);
+
+    const { Agent } = await import("@cursor/sdk");
+    const result = await Agent.prompt(prompt, {
+      apiKey,
+      model: { id: model },
+      local: {
+        cwd: process.cwd(),
+        customTools: customTools as Record<string, import("@cursor/sdk").SDKCustomTool>,
+        settingSources: [],
+      },
+      // Uniquement les custom tools Verdura (exposés via MCP) — lecture BDD Supabase.
+      tools: ["mcp"],
     });
 
-    const openai = getOpenAIClient();
-    const model = process.env.OPENAI_MODEL?.trim() || "gpt-4o";
-    const tools = getToolsForRole(ctx.primaryRole);
-
-    const conversation: ChatCompletionMessageParam[] = [
-      { role: "system", content: systemPrompt },
-      ...body.messages
-        .filter((m) => m.role === "user" || m.role === "assistant")
-        .map((m) => ({ role: m.role, content: m.content })),
-    ];
-
-    const toolsUsed: ToolCallRecord[] = [];
-    let assistantContent = "";
-
-    for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
-      const completion = await openai.chat.completions.create({
-        model,
-        messages: conversation,
-        tools: tools.length > 0 ? tools : undefined,
-        tool_choice: tools.length > 0 ? "auto" : undefined,
-      });
-
-      const choice = completion.choices[0];
-      if (!choice?.message) {
-        throw new AiToolError("OPENAI_ERROR", "Réponse OpenAI vide.", 502);
-      }
-
-      const assistantMessage = choice.message;
-      conversation.push(assistantMessage);
-
-      if (!assistantMessage.tool_calls?.length) {
-        assistantContent = assistantMessage.content ?? "";
-        break;
-      }
-
-      for (const toolCall of assistantMessage.tool_calls) {
-        if (toolCall.type !== "function") continue;
-
-        const fnCall = toolCall;
-        const { result, record } = await dispatchTool(
-          ctx,
-          fnCall.function.name,
-          fnCall.function.arguments,
-        );
-        toolsUsed.push(record);
-
-        const toolMessage: ChatCompletionToolMessageParam = {
-          role: "tool",
-          tool_call_id: fnCall.id,
-          content: JSON.stringify(result),
-        };
-        conversation.push(toolMessage);
-      }
+    if (result.status === "error") {
+      throw new AiToolError(
+        "CURSOR_ERROR",
+        result.error?.message ?? "L'agent Cursor n'a pas pu terminer la réponse.",
+        502,
+      );
     }
 
-    if (!assistantContent) {
-      assistantContent =
-        "Je n'ai pas pu finaliser la réponse. Veuillez reformuler votre question.";
-    }
+    const assistantContent =
+      result.result?.trim() ||
+      "Je n'ai pas pu finaliser la réponse. Veuillez reformuler votre question.";
 
     await insertJarvisMessage(ctx, {
       role: "assistant",

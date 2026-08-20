@@ -14,7 +14,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { VerduraPageContextProvider } from "@/lib/verdura-page-context";
 import { VerduraChatProvider } from "@/hooks/useVerduraChat";
-import { VerduraFloatingButton } from "@/components/chat/VerduraFloatingButton";
+import { VerduraChatHost } from "@/components/chat/VerduraFloatingButton";
 import { Menu, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -123,7 +123,7 @@ function RootShell({ children }: { children: React.ReactNode }) {
 function AuthenticatedVerduraChat() {
   const { user, loading } = useAuth();
   if (loading || !user) return null;
-  return <VerduraFloatingButton />;
+  return <VerduraChatHost />;
 }
 
 function RootComponent() {

@@ -1,11 +1,38 @@
 import * as React from "react";
-import { MessageCircle } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import { useVerduraChat } from "@/hooks/useVerduraChat";
 import { VerduraChatDrawer } from "@/components/chat/VerduraChatDrawer";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-export function VerduraFloatingButton() {
+/** Bouton discret pour ouvrir le copilote — à placer à gauche du nom utilisateur. */
+export function VerduraChatButton({ className }: { className?: string }) {
+  const chat = useVerduraChat();
+
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      aria-label="Ouvrir Verdura Copilote"
+      title="Verdura Copilote (Ctrl+Shift+V)"
+      className={cn(
+        "relative h-8 w-8 shrink-0 text-muted-foreground/70 hover:bg-emerald-50 hover:text-emerald-700",
+        chat.isDrawerOpen && "bg-emerald-50/80 text-emerald-700",
+        className,
+      )}
+      onClick={() => chat.setDrawerOpen(!chat.isDrawerOpen)}
+    >
+      <Sparkles className="h-4 w-4 stroke-[1.5]" />
+      {!chat.isDrawerOpen && chat.messages.length > 0 && (
+        <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-emerald-500 ring-2 ring-background" />
+      )}
+    </Button>
+  );
+}
+
+/** Tiroir + raccourci clavier (sans bouton flottant). */
+export function VerduraChatHost() {
   const chat = useVerduraChat();
 
   React.useEffect(() => {
@@ -19,28 +46,14 @@ export function VerduraFloatingButton() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [chat]);
 
+  return <VerduraChatDrawer open={chat.isDrawerOpen} onOpenChange={chat.setDrawerOpen} />;
+}
+
+/** @deprecated Utiliser VerduraChatButton + VerduraChatHost séparément. */
+export function VerduraFloatingButton() {
   return (
     <>
-      <Button
-        type="button"
-        size="icon"
-        aria-label="Ouvrir Verdura Copilote"
-        className={cn(
-          "fixed bottom-5 right-5 z-40 h-12 w-12 rounded-full shadow-lg",
-          "bg-emerald-700 text-white hover:bg-emerald-800",
-          chat.isDrawerOpen && "scale-95 opacity-90",
-        )}
-        onClick={() => chat.setDrawerOpen(true)}
-      >
-        <MessageCircle className="h-5 w-5" />
-        {!chat.isDrawerOpen && chat.messages.length > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-amber-400 text-[9px] font-bold text-slate-900">
-            {Math.min(chat.messages.length, 9)}
-          </span>
-        )}
-      </Button>
-
-      <VerduraChatDrawer open={chat.isDrawerOpen} onOpenChange={chat.setDrawerOpen} />
+      <VerduraChatHost />
     </>
   );
 }
